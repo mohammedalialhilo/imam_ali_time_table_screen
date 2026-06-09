@@ -11,12 +11,9 @@ exports.handler = async function handler() {
     const fileContent = await fs.readFile(filePath, "utf8");
     const payload = JSON.parse(fileContent);
 
-    const activeEvents = payload
-      .filter((event) => event.active)
-      .sort((left, right) => createEventDateTime(left) - createEventDateTime(right));
-
-    const now = new Date();
-    const upcomingEvent = activeEvents.find((event) => createEventDateTime(event) >= now) ?? activeEvents[0] ?? null;
+    const upcomingEvent = payload
+      .filter((event) => event.active && createEventDateTime(event) >= new Date())
+      .sort((left, right) => createEventDateTime(left) - createEventDateTime(right))[0] ?? null;
 
     return {
       statusCode: 200,

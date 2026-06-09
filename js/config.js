@@ -96,6 +96,38 @@ export const APP_CONFIG = {
       bodyDanish: "Muharram-layoutet er klargjort til majalis og særlige mindehøjtideligheder.",
     },
   },
+  prayerMessages: {
+    missingToday: {
+      arabic: "بيانات اليوم غير متوفرة",
+      danish: "Dagens bønnetider mangler",
+    },
+    missingTodayDetail: {
+      arabic: "لا توجد مواقيت محفوظة لتاريخ اليوم.",
+      danish: "Der findes ingen gemte bønnetider for dagens dato.",
+    },
+    dayCompleted: {
+      arabic: "انتهت صلوات اليوم",
+      danish: "Dagens bønner er afsluttet",
+    },
+    countdownUnavailable: {
+      arabic: "--س --د --ث",
+      danish: "--t --m --s",
+    },
+    invalidTime: {
+      arabic: "وقت غير صالح",
+      danish: "Ugyldig tid",
+    },
+  },
+  eventMessages: {
+    noneUpcoming: {
+      arabic: "لا توجد فعاليات قادمة حالياً",
+      danish: "Der er ingen kommende begivenheder lige nu",
+    },
+    noneUpcomingDetail: {
+      arabic: "سيتم عرض الفعالية التالية عند إضافتها وتفعيلها.",
+      danish: "Den næste begivenhed vises her, når den er tilføjet og aktiv.",
+    },
+  },
 };
 
 export const SAMPLE_PRAYER_TIMES = [

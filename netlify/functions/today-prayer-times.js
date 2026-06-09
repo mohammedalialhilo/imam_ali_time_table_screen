@@ -1,30 +1,50 @@
 const fs = require("fs/promises");
 const path = require("path");
 
-function getTodayDateKey() {
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Europe/Copenhagen",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function pad(value) {
+  return String(value).padStart(2, "0");
 }
 
-exports.handler = async function handler() {
+function getDateKeyFromDate(date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function getRequestedDateKey(event) {
+  const requestedDate = event.queryStringParameters?.date;
+  if (DATE_KEY_PATTERN.test(String(requestedDate ?? "").trim())) {
+    return requestedDate;
+  }
+
+  return getDateKeyFromDate(new Date());
+}
+
+function getTomorrowDateKey(dateKey) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return getDateKeyFromDate(new Date(year, month - 1, day + 1, 0, 0, 0, 0));
+}
+
+exports.handler = async function handler(event) {
   try {
     const filePath = path.join(__dirname, "..", "..", "data", "prayer-times.sample.json");
     const fileContent = await fs.readFile(filePath, "utf8");
     const payload = JSON.parse(fileContent);
-    const todayDateKey = getTodayDateKey();
-    const todayPrayerTimes = payload.find((entry) => entry.date === todayDateKey) ?? payload[0] ?? null;
+    const requestedDateKey = getRequestedDateKey(event);
+    const tomorrowDateKey = getTomorrowDateKey(requestedDateKey);
+
+    const todayPrayerTimes = payload.find((entry) => entry.date === requestedDateKey) ?? null;
+    const tomorrowPrayerTimes = payload.find((entry) => entry.date === tomorrowDateKey) ?? null;
 
     return {
       statusCode: 200,
       headers: { "content-type": "application/json; charset=utf-8" },
       body: JSON.stringify({
         source: "sample-file",
-        date: todayDateKey,
+        date: requestedDateKey,
         prayerTimes: todayPrayerTimes,
+        tomorrowPrayerTimes,
+        items: [todayPrayerTimes, tomorrowPrayerTimes].filter(Boolean),
       }),
     };
   } catch (error) {

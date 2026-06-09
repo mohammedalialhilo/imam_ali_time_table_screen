@@ -1,20 +1,13 @@
-import { APP_CONFIG } from "./config.js";
-
 function getLocaleDateFormatter(locale, options = {}) {
-  return new Intl.DateTimeFormat(locale, {
-    timeZone: APP_CONFIG.timezone,
-    ...options,
-  });
+  return new Intl.DateTimeFormat(locale, options);
+}
+
+function pad(value) {
+  return String(value).padStart(2, "0");
 }
 
 export function toDateKey(date = new Date()) {
-  const formatter = getLocaleDateFormatter("sv-SE", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-
-  return formatter.format(date);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 export function formatCurrentTime(date = new Date()) {

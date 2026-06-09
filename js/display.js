@@ -1,7 +1,22 @@
 import { APP_CONFIG } from "./config.js";
 import { loadEvents, getUpcomingEvent } from "./events.js";
-import { formatCurrentTime, formatEventDateText, formatGregorianDate, formatShortBadgeDate, formatWeekdayLabel, startClock, toDateKey } from "./clock.js";
-import { getCountdownPayload, getNextPrayerInfo, getResolvedPrayerEntries, loadPrayerTimes } from "./prayer-times.js";
+import {
+  formatCurrentTime,
+  formatEventDateText,
+  formatGregorianDate,
+  formatShortBadgeDate,
+  formatWeekdayLabel,
+  startClock,
+} from "./clock.js";
+import {
+  getCountdownPayload,
+  getLocalDateKey,
+  getNextPrayer,
+  getPrayerDisplayTime,
+  getTodayPrayerTimes,
+  getTomorrowPrayerTimes,
+  loadPrayerTimes,
+} from "./prayer-times.js";
 import { getThemeFromStorage } from "./storage.js";
 
 const PRAYER_ICONS = {
@@ -67,6 +82,20 @@ const PRAYER_ICONS = {
   `,
 };
 
+const FALLBACK_HIJRI = {
+  arabic: "التاريخ الهجري قيد التحديث",
+  danish: "Hijri-dato opdateres",
+};
+
+const DEFAULT_EVENT_META = {
+  titleArabic: "—",
+  titleDanish: "—",
+  descriptionArabic: "—",
+  descriptionDanish: "—",
+  locationArabic: "—",
+  locationDanish: "—",
+};
+
 const elements = {
   body: document.body,
   featureBanner: document.querySelector("#feature-banner"),
@@ -100,6 +129,9 @@ const elements = {
   countdownMain: document.querySelector("#countdown-main"),
   countdownAr: document.querySelector("#countdown-ar"),
   countdownDa: document.querySelector("#countdown-da"),
+  prayerStatus: document.querySelector("#prayer-status"),
+  prayerStatusAr: document.querySelector("#prayer-status-ar"),
+  prayerStatusDa: document.querySelector("#prayer-status-da"),
   prayerList: document.querySelector("#prayer-list"),
   dataSourceIndicator: document.querySelector("#data-source-indicator"),
   eventThemeLabel: document.querySelector("#event-theme-label"),
@@ -125,9 +157,10 @@ const state = {
   eventItems: [],
   currentDateKey: "",
   todayEntry: null,
-  nextDayEntry: null,
+  tomorrowEntry: null,
   featureEvent: null,
   upcomingEvent: null,
+  midnightReloadTimer: 0,
 };
 
 function setText(element, value) {
@@ -137,7 +170,9 @@ function setText(element, value) {
 }
 
 function setIcon(container, iconName) {
-  container.innerHTML = PRAYER_ICONS[iconName] ?? PRAYER_ICONS.sun;
+  if (container) {
+    container.innerHTML = PRAYER_ICONS[iconName] ?? PRAYER_ICONS.sun;
+  }
 }
 
 function applyTheme(theme) {
@@ -175,8 +210,8 @@ function getThemeFeatureEvent(events, theme, now) {
 
 function renderNoticeCard() {
   const noticeCopy = APP_CONFIG.noticeMessages[state.theme];
-  setText(elements.noticeTitleAr, noticeCopy.arabic);
-  setText(elements.noticeTitleDa, noticeCopy.danish);
+  setText(elements.noticeTitleAr, noticeCopy.titleArabic);
+  setText(elements.noticeTitleDa, noticeCopy.titleDanish);
   setText(elements.noticeBodyAr, noticeCopy.bodyArabic);
   setText(elements.noticeBodyDa, noticeCopy.bodyDanish);
 }
@@ -190,10 +225,10 @@ function renderHeadline(event) {
   setText(elements.bannerContextAr, context.arabic);
   setText(elements.bannerContextDa, context.danish);
 
-  setText(elements.headlineTitleAr, event?.titleArabic ?? fallback.titleArabic);
-  setText(elements.headlineTitleDa, event?.titleDanish ?? fallback.titleDanish);
-  setText(elements.headlineDescriptionAr, event?.descriptionArabic ?? fallback.descriptionArabic);
-  setText(elements.headlineDescriptionDa, event?.descriptionDanish ?? fallback.descriptionDanish);
+  setText(elements.headlineTitleAr, event?.titleArabic || fallback.titleArabic);
+  setText(elements.headlineTitleDa, event?.titleDanish || fallback.titleDanish);
+  setText(elements.headlineDescriptionAr, event?.descriptionArabic || fallback.descriptionArabic);
+  setText(elements.headlineDescriptionDa, event?.descriptionDanish || fallback.descriptionDanish);
   setText(elements.headlineTagAr, context.tagArabic ?? fallback.tagArabic);
   setText(elements.headlineTagDa, context.tagDanish ?? fallback.tagDanish);
 
@@ -201,10 +236,11 @@ function renderHeadline(event) {
     const weekday = formatWeekdayLabel(event.date);
     setText(elements.headlineMetaAr, `${weekday.arabic} - ${event.time}`);
     setText(elements.headlineMetaDa, `${weekday.danish} - ${event.time}`);
-  } else {
-    setText(elements.headlineMetaAr, context.metaArabic);
-    setText(elements.headlineMetaDa, context.metaDanish);
+    return;
   }
+
+  setText(elements.headlineMetaAr, context.metaArabic);
+  setText(elements.headlineMetaDa, context.metaDanish);
 }
 
 function renderClock(now) {
@@ -214,19 +250,39 @@ function renderClock(now) {
   setText(elements.gregorianAr, gregorian.arabic);
   setText(elements.gregorianDa, gregorian.danish);
 
-  setText(elements.hijriAr, state.todayEntry?.hijriDateArabic ?? "تحديث التاريخ الهجري");
-  setText(elements.hijriDa, state.todayEntry?.hijriDateLatin ?? "Update Hijri date");
+  setText(elements.hijriAr, state.todayEntry?.hijriDateArabic || FALLBACK_HIJRI.arabic);
+  setText(elements.hijriDa, state.todayEntry?.hijriDateLatin || FALLBACK_HIJRI.danish);
 }
 
-function renderPrayerList(nextPrayerKey) {
-  if (!state.todayEntry) {
-    elements.prayerList.innerHTML = "";
+function renderPrayerStatus(nextPrayer) {
+  if (!elements.prayerStatus) {
     return;
   }
 
+  if (!state.todayEntry) {
+    setText(elements.prayerStatusAr, APP_CONFIG.prayerMessages.missingTodayDetail.arabic);
+    setText(elements.prayerStatusDa, APP_CONFIG.prayerMessages.missingTodayDetail.danish);
+    elements.prayerStatus.hidden = false;
+    return;
+  }
+
+  if (nextPrayer?.status === "day-completed" && !state.tomorrowEntry) {
+    setText(elements.prayerStatusAr, APP_CONFIG.prayerMessages.dayCompleted.arabic);
+    setText(elements.prayerStatusDa, APP_CONFIG.prayerMessages.dayCompleted.danish);
+    elements.prayerStatus.hidden = false;
+    return;
+  }
+
+  elements.prayerStatus.hidden = true;
+}
+
+function renderPrayerList(nextPrayer) {
+  const nextPrayerKey = nextPrayer?.key ?? null;
+
   const rows = APP_CONFIG.prayerOrder.map((key) => {
     const meta = APP_CONFIG.prayerMeta[key];
-    const isNext = key === nextPrayerKey;
+    const isNext = nextPrayerKey === key && nextPrayer?.status !== "missing-today";
+
     return `
       <li class="prayer-card${isNext ? " is-next" : ""}">
         <div class="prayer-icon" aria-hidden="true">${PRAYER_ICONS[meta.icon] ?? ""}</div>
@@ -234,7 +290,7 @@ function renderPrayerList(nextPrayerKey) {
           <p class="prayer-name-ar arabic">${meta.arabic}</p>
           <p class="prayer-name-da latin">${meta.danish}</p>
         </div>
-        <p class="prayer-time time-text">${state.todayEntry[key]}</p>
+        <p class="prayer-time time-text">${getPrayerDisplayTime(state.todayEntry, key)}</p>
       </li>
     `;
   }).join("");
@@ -242,15 +298,36 @@ function renderPrayerList(nextPrayerKey) {
   elements.prayerList.innerHTML = rows;
 }
 
+function setNextPrayerFallback(primaryArabic, primaryDanish) {
+  setIcon(elements.nextPrayerIcon, "sun");
+  setText(elements.nextPrayerNameAr, primaryArabic);
+  setText(elements.nextPrayerNameDa, primaryDanish);
+  setText(elements.countdownMain, "--:--:--");
+  setText(elements.countdownAr, APP_CONFIG.prayerMessages.countdownUnavailable.arabic);
+  setText(elements.countdownDa, APP_CONFIG.prayerMessages.countdownUnavailable.danish);
+}
+
 function renderNextPrayer(now) {
-  const nextPrayer = getNextPrayerInfo(state.todayEntry, now, state.nextDayEntry);
-  if (!nextPrayer) {
-    setText(elements.nextPrayerNameAr, "—");
-    setText(elements.nextPrayerNameDa, "—");
-    setText(elements.countdownMain, "00:00:00");
-    setText(elements.countdownAr, "٠ س ٠ د ٠ ث");
-    setText(elements.countdownDa, "0 t 0 m 0 s");
-    return null;
+  const nextPrayer = getNextPrayer(state.todayEntry, now, state.tomorrowEntry);
+
+  if (nextPrayer.status === "missing-today") {
+    setNextPrayerFallback(
+      APP_CONFIG.prayerMessages.missingToday.arabic,
+      APP_CONFIG.prayerMessages.missingToday.danish,
+    );
+    renderPrayerStatus(nextPrayer);
+    renderPrayerList(nextPrayer);
+    return nextPrayer;
+  }
+
+  if (nextPrayer.status === "day-completed") {
+    setNextPrayerFallback(
+      APP_CONFIG.prayerMessages.dayCompleted.arabic,
+      APP_CONFIG.prayerMessages.dayCompleted.danish,
+    );
+    renderPrayerStatus(nextPrayer);
+    renderPrayerList(nextPrayer);
+    return nextPrayer;
   }
 
   setIcon(elements.nextPrayerIcon, nextPrayer.label.icon);
@@ -262,24 +339,27 @@ function renderNextPrayer(now) {
   setText(elements.countdownAr, countdown.arabic);
   setText(elements.countdownDa, countdown.danish);
 
-  renderPrayerList(nextPrayer.key);
+  renderPrayerStatus(nextPrayer);
+  renderPrayerList(nextPrayer);
   return nextPrayer;
 }
 
 function renderEvent(event) {
   if (!event) {
-    setText(elements.eventThemeLabel, "No event");
+    setText(elements.eventThemeLabel, APP_CONFIG.themes[state.theme].label);
     setText(elements.eventDay, "--");
     setText(elements.eventMonth, "---");
-    setText(elements.eventHijriShort, "لا توجد فعالية");
-    setText(elements.eventTitleAr, "لا توجد فعالية محفوظة");
-    setText(elements.eventTitleDa, "Ingen gemt begivenhed");
-    setText(elements.eventDescriptionAr, "أضف فعالية من صفحة الإدارة.");
-    setText(elements.eventDescriptionDa, "Tilføj en begivenhed fra admin-siden.");
+    setText(elements.eventHijriShort, "—");
+    setText(elements.eventTitleAr, APP_CONFIG.eventMessages.noneUpcoming.arabic);
+    setText(elements.eventTitleDa, APP_CONFIG.eventMessages.noneUpcoming.danish);
+    setText(elements.eventDescriptionAr, APP_CONFIG.eventMessages.noneUpcomingDetail.arabic);
+    setText(elements.eventDescriptionDa, APP_CONFIG.eventMessages.noneUpcomingDetail.danish);
     setText(elements.eventTimeAr, "—");
     setText(elements.eventTimeDa, "—");
     setText(elements.eventLocationAr, "—");
     setText(elements.eventLocationDa, "—");
+    elements.eventDescriptionAr.title = "";
+    elements.eventDescriptionDa.title = "";
     return;
   }
 
@@ -287,18 +367,18 @@ function renderEvent(event) {
   const weekday = formatWeekdayLabel(event.date);
   const eventDateText = formatEventDateText(event.date);
 
-  setText(elements.eventThemeLabel, APP_CONFIG.themes[event.theme].label);
+  setText(elements.eventThemeLabel, APP_CONFIG.themes[event.theme]?.label ?? APP_CONFIG.themes[state.theme].label);
   setText(elements.eventDay, badge.day);
   setText(elements.eventMonth, badge.month);
   setText(elements.eventHijriShort, weekday.arabic);
-  setText(elements.eventTitleAr, event.titleArabic);
-  setText(elements.eventTitleDa, event.titleDanish);
-  setText(elements.eventDescriptionAr, event.descriptionArabic);
-  setText(elements.eventDescriptionDa, event.descriptionDanish);
+  setText(elements.eventTitleAr, event.titleArabic || DEFAULT_EVENT_META.titleArabic);
+  setText(elements.eventTitleDa, event.titleDanish || DEFAULT_EVENT_META.titleDanish);
+  setText(elements.eventDescriptionAr, event.descriptionArabic || DEFAULT_EVENT_META.descriptionArabic);
+  setText(elements.eventDescriptionDa, event.descriptionDanish || DEFAULT_EVENT_META.descriptionDanish);
   setText(elements.eventTimeAr, `الساعة ${event.time}`);
   setText(elements.eventTimeDa, `Kl. ${event.time}`);
-  setText(elements.eventLocationAr, event.locationArabic);
-  setText(elements.eventLocationDa, event.locationDanish);
+  setText(elements.eventLocationAr, event.locationArabic || DEFAULT_EVENT_META.locationArabic);
+  setText(elements.eventLocationDa, event.locationDanish || DEFAULT_EVENT_META.locationDanish);
 
   elements.eventDescriptionAr.title = eventDateText.arabic;
   elements.eventDescriptionDa.title = eventDateText.danish;
@@ -308,22 +388,39 @@ function renderSourceBadge() {
   const labels = {
     localStorage: "Local data",
     "sample-file": "Sample JSON",
+    "netlify-function": "Netlify",
     "inline-sample": "Inline sample",
   };
 
   setText(elements.dataSourceIndicator, labels[state.prayerSource] ?? "Sample");
 }
 
+function scheduleMidnightReload(now = new Date()) {
+  if (state.midnightReloadTimer) {
+    window.clearTimeout(state.midnightReloadTimer);
+  }
+
+  const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 3, 0);
+  const delay = Math.max(1000, nextMidnight.getTime() - now.getTime());
+  state.midnightReloadTimer = window.setTimeout(() => {
+    window.location.reload();
+  }, delay);
+}
+
 function syncDayState(now) {
-  state.currentDateKey = toDateKey(now);
-  const resolved = getResolvedPrayerEntries(state.prayerItems, state.currentDateKey);
-  state.todayEntry = resolved.today;
-  state.nextDayEntry = resolved.nextDay;
+  state.currentDateKey = getLocalDateKey(now);
+  state.todayEntry = getTodayPrayerTimes(state.prayerItems, now);
+  state.tomorrowEntry = getTomorrowPrayerTimes(state.prayerItems, now);
   state.featureEvent = getThemeFeatureEvent(state.eventItems, state.theme, now);
+
   const generalUpcomingEvent = getUpcomingEvent(state.eventItems, now);
-  state.upcomingEvent = state.theme === "muharram" ? state.featureEvent ?? generalUpcomingEvent : generalUpcomingEvent;
+  state.upcomingEvent = state.theme === "muharram"
+    ? state.featureEvent ?? generalUpcomingEvent
+    : generalUpcomingEvent;
+
   renderHeadline(state.featureEvent);
   renderEvent(state.upcomingEvent);
+  scheduleMidnightReload(now);
 }
 
 async function initDisplay() {
@@ -341,9 +438,10 @@ async function initDisplay() {
   renderNextPrayer(now);
 
   startClock((tickDate) => {
-    const nextDateKey = toDateKey(tickDate);
+    const nextDateKey = getLocalDateKey(tickDate);
     if (nextDateKey !== state.currentDateKey) {
-      syncDayState(tickDate);
+      window.location.reload();
+      return;
     }
 
     renderClock(tickDate);

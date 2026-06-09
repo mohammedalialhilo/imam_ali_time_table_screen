@@ -1,11 +1,12 @@
 import { APP_CONFIG, SAMPLE_EVENTS } from "./config.js";
 import { getEventsFromStorage } from "./storage.js";
 
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-function normalizeEvent(entry) {
+function normalizeEvent(entry = {}, index = 0) {
   return {
-    id: String(entry.id ?? "").trim(),
+    id: String(entry.id ?? `event-${index + 1}`).trim(),
     titleArabic: String(entry.titleArabic ?? "").trim(),
     titleDanish: String(entry.titleDanish ?? "").trim(),
     date: String(entry.date ?? "").trim(),
@@ -17,6 +18,68 @@ function normalizeEvent(entry) {
     theme: APP_CONFIG.themes[entry.theme] ? entry.theme : APP_CONFIG.defaultTheme,
     active: Boolean(entry.active),
   };
+}
+
+function sanitizeEvent(entry, index) {
+  const normalized = normalizeEvent(entry, index);
+  if (!DATE_KEY_PATTERN.test(normalized.date) || !TIME_PATTERN.test(normalized.time)) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function sanitizeEventsArray(input) {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  return input
+    .map((entry, index) => sanitizeEvent(entry, index))
+    .filter(Boolean)
+    .sort((left, right) => createEventDateTime(left) - createEventDateTime(right));
+}
+
+function normalizeEventPayload(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload?.items)) {
+    return payload.items;
+  }
+
+  if (Array.isArray(payload?.events)) {
+    return payload.events;
+  }
+
+  if (payload?.upcomingEvent && typeof payload.upcomingEvent === "object") {
+    return [payload.upcomingEvent];
+  }
+
+  if (payload && typeof payload === "object" && "date" in payload && "time" in payload) {
+    return [payload];
+  }
+
+  return [];
+}
+
+async function fetchEventsJson(url) {
+  if (typeof window === "undefined" || window.location.protocol === "file:" || typeof fetch !== "function") {
+    return [];
+  }
+
+  try {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) {
+      return [];
+    }
+
+    const payload = await response.json();
+    return sanitizeEventsArray(normalizeEventPayload(payload));
+  } catch (error) {
+    return [];
+  }
 }
 
 function createEventDateTime(event) {
@@ -42,7 +105,7 @@ export function validateEventsArray(input) {
       errors.push(`Event ${index + 1}: id is required.`);
     }
 
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(event.date)) {
+    if (!DATE_KEY_PATTERN.test(event.date)) {
       errors.push(`Event ${index + 1}: date must use YYYY-MM-DD.`);
     }
 
@@ -67,38 +130,31 @@ export function validateEventsArray(input) {
 }
 
 async function loadSampleEventsFromFile() {
-  if (typeof window === "undefined" || window.location.protocol === "file:" || typeof fetch !== "function") {
-    return null;
-  }
+  return fetchEventsJson(APP_CONFIG.samplePaths.events);
+}
 
-  try {
-    const response = await fetch(APP_CONFIG.samplePaths.events, { cache: "no-store" });
-    if (!response.ok) {
-      return null;
-    }
-
-    const payload = await response.json();
-    const validation = validateEventsArray(payload);
-    return validation.valid ? validation.normalized : null;
-  } catch (error) {
-    return null;
-  }
+async function loadUpcomingEventFromFunction() {
+  return fetchEventsJson(APP_CONFIG.apiPaths.upcomingEvent);
 }
 
 export async function loadEvents() {
-  const stored = getEventsFromStorage();
-  const storedValidation = validateEventsArray(stored);
-  if (storedValidation.valid && storedValidation.normalized.length > 0) {
-    return { items: storedValidation.normalized, source: "localStorage" };
+  const storedEvents = sanitizeEventsArray(getEventsFromStorage());
+  if (storedEvents.length > 0) {
+    return { items: storedEvents, source: "localStorage" };
   }
 
-  const fileData = await loadSampleEventsFromFile();
-  if (fileData && fileData.length > 0) {
-    return { items: fileData, source: "sample-file" };
+  const fileEvents = await loadSampleEventsFromFile();
+  if (fileEvents.length > 0) {
+    return { items: fileEvents, source: "sample-file" };
+  }
+
+  const functionEvents = await loadUpcomingEventFromFunction();
+  if (functionEvents.length > 0) {
+    return { items: functionEvents, source: "netlify-function" };
   }
 
   return {
-    items: validateEventsArray(SAMPLE_EVENTS).normalized,
+    items: sanitizeEventsArray(SAMPLE_EVENTS),
     source: "inline-sample",
   };
 }
@@ -108,19 +164,11 @@ export function getUpcomingEvent(events, now = new Date()) {
     return null;
   }
 
-  const activeEvents = events.filter((event) => event.active);
-  if (activeEvents.length === 0) {
-    return null;
-  }
+  const sortedUpcomingEvents = events
+    .filter((event) => event.active && createEventDateTime(event).getTime() >= now.getTime())
+    .sort((left, right) => createEventDateTime(left) - createEventDateTime(right));
 
-  const sorted = [...activeEvents].sort((left, right) => {
-    const leftDate = createEventDateTime(left).getTime();
-    const rightDate = createEventDateTime(right).getTime();
-    return leftDate - rightDate;
-  });
-
-  const futureEvent = sorted.find((event) => createEventDateTime(event).getTime() >= now.getTime());
-  return futureEvent ?? sorted[0];
+  return sortedUpcomingEvents[0] ?? null;
 }
 
 export function getEventDateTime(event) {
