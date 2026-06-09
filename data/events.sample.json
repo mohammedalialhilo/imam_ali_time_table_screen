@@ -1,0 +1,28 @@
+[
+  {
+    "id": "event-001",
+    "titleArabic": "صلاة الجمعة",
+    "titleDanish": "Fredagsbøn (Jumu'ah)",
+    "date": "2026-06-12",
+    "time": "13:30",
+    "locationArabic": "الجامع الرئيسي",
+    "locationDanish": "Hovedmoskeen",
+    "descriptionArabic": "مرحباً بكم - نسعد بزيارتكم",
+    "descriptionDanish": "Alle er velkomne - Vi glæder os til at se dig",
+    "theme": "teal",
+    "active": true
+  },
+  {
+    "id": "event-002",
+    "titleArabic": "مجلس الليلة الأولى من محرم",
+    "titleDanish": "Majlis – første aften af Muharram",
+    "date": "2026-06-13",
+    "time": "19:30",
+    "locationArabic": "الجامع الرئيسي",
+    "locationDanish": "Hovedmoskeen",
+    "descriptionArabic": "ذكرى استشهاد الإمام الحسين عليه السلام",
+    "descriptionDanish": "Mindehøjtidelighed for Imam Hussein",
+    "theme": "muharram",
+    "active": true
+  }
+]

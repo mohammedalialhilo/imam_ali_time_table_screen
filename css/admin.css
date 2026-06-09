@@ -1,0 +1,137 @@
+.admin-shell {
+  min-height: 100vh;
+  padding: 1.25rem;
+}
+
+.admin-header,
+.admin-panel {
+  padding: 1.25rem;
+}
+
+.admin-header {
+  width: min(100%, var(--content-width));
+  margin: 0 auto 1rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-kicker {
+  margin: 0 0 0.4rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.16rem;
+  font-size: 0.9rem;
+}
+
+.admin-header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3rem);
+}
+
+.admin-copy {
+  margin: 0.6rem 0 0;
+  max-width: 46rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.admin-links {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.admin-grid {
+  width: min(100%, var(--content-width));
+  margin: 0 auto;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.admin-panel h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.admin-panel p {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.theme-selector {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  border: 1px solid rgb(var(--accent-rgb) / 0.18);
+  border-radius: 1rem;
+  padding: 0.95rem 1rem;
+  background: rgb(255 255 255 / 0.02);
+}
+
+.theme-option input {
+  accent-color: var(--accent);
+}
+
+.theme-option strong,
+.theme-option small {
+  display: block;
+}
+
+.theme-option small {
+  margin-top: 0.2rem;
+  color: var(--text-muted);
+}
+
+.preview-panel {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.preview-block {
+  border: 1px solid rgb(var(--accent-rgb) / 0.14);
+  border-radius: 1rem;
+  padding: 1rem;
+  background: rgb(255 255 255 / 0.02);
+}
+
+.preview-block h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+}
+
+.preview-block p {
+  margin: 0.15rem 0;
+}
+
+@media (max-width: 980px) {
+  .admin-header,
+  .admin-panel-heading {
+    flex-direction: column;
+  }
+
+  .admin-grid {
+    grid-template-columns: 1fr;
+  }
+}

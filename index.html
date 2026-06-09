@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Imam Ali Moskeen Display</title>
+    <meta
+      name="description"
+      content="Digital signage display for Imam Ali Moskeen prayer times, current time, and upcoming events."
+    >
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/themes.css">
+    <link rel="stylesheet" href="css/display.css">
+  </head>
+  <body data-page="display" data-theme="teal">
+    <main class="screen">
+      <div class="screen-grid">
+        <header class="brand" aria-label="هوية المسجد">
+          <div class="brand-inner">
+            <div class="logo">
+              <img id="theme-logo" src="assets/logo-teal.png" alt="Imam Ali Moskeen logo">
+              <div id="logo-fallback" class="logo-fallback" hidden aria-hidden="true">IA</div>
+            </div>
+            <div class="brand-copy">
+              <p class="arabic mosque-name">مسجد الإمام علي</p>
+              <p class="latin mosque-name-secondary">IMAM ALI MOSKEEN</p>
+              <p class="arabic mosque-location">كوبنهاغن - الدنمارك</p>
+              <p class="latin mosque-location-secondary">KØBENHAVN - DANMARK</p>
+            </div>
+          </div>
+        </header>
+
+        <section id="feature-banner" class="panel friday-banner" aria-label="البطاقة الرئيسية">
+          <div class="headline-date-pill">
+            <span id="headline-day" class="headline-day time-text">--</span>
+            <span id="headline-month" class="headline-month">---</span>
+          </div>
+          <div class="banner-copy">
+            <p id="banner-context-ar" class="section-label arabic">صلاة الجمعة</p>
+            <p id="banner-context-da" class="section-label latin">Fredagsbøn</p>
+            <h1 id="headline-title-ar" class="headline-title arabic">—</h1>
+            <p id="headline-title-da" class="headline-subtitle latin">—</p>
+            <p id="headline-description-ar" class="headline-description arabic">—</p>
+            <p id="headline-description-da" class="headline-description latin">—</p>
+          </div>
+          <div class="banner-side">
+            <p id="headline-tag-ar" class="headline-tag arabic">—</p>
+            <p id="headline-tag-da" class="headline-tag latin">—</p>
+            <div class="banner-meta">
+              <p id="headline-meta-ar" class="banner-meta-line arabic">—</p>
+              <p id="headline-meta-da" class="banner-meta-line latin">—</p>
+            </div>
+          </div>
+        </section>
+
+        <aside class="notice-card panel" aria-label="بطاقة تنبيه">
+          <div class="notice-mark" aria-hidden="true">
+            <span></span>
+          </div>
+          <div class="notice-copy">
+            <p id="notice-title-ar" class="notice-title arabic">ابقَ على اطلاع</p>
+            <p id="notice-title-da" class="notice-subtitle latin">Hold dig opdateret</p>
+            <p id="notice-body-ar" class="notice-text arabic">تابع الأحداث القادمة على موقعنا ووسائل التواصل الاجتماعي.</p>
+            <p id="notice-body-da" class="notice-text latin">Følg med i kommende begivenheder på vores hjemmeside og sociale medier.</p>
+          </div>
+        </aside>
+
+        <section class="clock-panel panel" aria-label="الوقت والتواريخ الحالية">
+          <div class="clock-title">
+            <p class="section-label arabic">الوقت الحالي</p>
+            <p class="section-label latin">Aktuel tid</p>
+          </div>
+          <p id="clock-time" class="clock-time time-text" aria-live="polite">00:00:00</p>
+          <div class="date-grid">
+            <div class="date-block">
+              <p class="section-label arabic">التاريخ الميلادي</p>
+              <p class="section-label latin">Gregoriansk dato</p>
+              <p id="gregorian-ar" class="prominent-line arabic">—</p>
+              <p id="gregorian-da" class="secondary-line latin">—</p>
+            </div>
+            <div class="date-divider" aria-hidden="true"></div>
+            <div class="date-block">
+              <p class="section-label arabic">التاريخ الهجري</p>
+              <p class="section-label latin">Hijri-dato</p>
+              <p id="hijri-ar" class="prominent-line arabic">—</p>
+              <p id="hijri-da" class="secondary-line latin">—</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="next-prayer-card panel" aria-label="الصلاة القادمة">
+          <div class="panel-heading">
+            <div>
+              <p class="section-label arabic">الصلاة القادمة</p>
+              <p class="section-label latin">Næste bøn</p>
+            </div>
+            <span id="theme-pill" class="info-pill">Teal</span>
+          </div>
+          <div class="next-prayer-grid">
+            <div class="next-prayer-copy">
+              <div id="next-prayer-icon" class="prayer-icon prayer-icon-large" aria-hidden="true"></div>
+              <div>
+                <p id="next-prayer-name-ar" class="next-prayer-name arabic">—</p>
+                <p id="next-prayer-name-da" class="next-prayer-name-secondary latin">—</p>
+              </div>
+            </div>
+            <div class="countdown-copy" aria-live="polite">
+              <p class="section-label arabic">حتى الصلاة القادمة</p>
+              <p class="section-label latin">Til næste bøn</p>
+              <p id="countdown-main" class="countdown-main time-text">00:00:00</p>
+              <p id="countdown-ar" class="countdown-secondary arabic">٠ س ٠ د ٠ ث</p>
+              <p id="countdown-da" class="countdown-secondary latin">0 t 0 m 0 s</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="prayer-panel panel" aria-label="مواقيت الصلاة">
+          <div class="panel-heading">
+            <div>
+              <p class="section-label arabic">مواقيت اليوم</p>
+              <p class="section-label latin">Dagens tider</p>
+            </div>
+            <span id="data-source-indicator" class="info-pill">Sample</span>
+          </div>
+          <ul id="prayer-list" class="prayer-list" aria-live="polite"></ul>
+        </section>
+
+        <section class="event-panel panel" aria-label="الفعالية القادمة">
+          <div class="panel-heading">
+            <div>
+              <p class="section-label arabic">الفعالية القادمة</p>
+              <p class="section-label latin">Kommende begivenhed</p>
+            </div>
+            <span id="event-theme-label" class="info-pill">—</span>
+          </div>
+          <div class="event-layout">
+            <div class="event-date-pill">
+              <span id="event-day" class="event-day time-text">--</span>
+              <span id="event-month" class="event-month">---</span>
+              <span id="event-hijri-short" class="event-hijri-short arabic">—</span>
+            </div>
+            <div class="event-body">
+              <h2 id="event-title-ar" class="event-title arabic">—</h2>
+              <p id="event-title-da" class="event-subtitle latin">—</p>
+              <p id="event-description-ar" class="event-description arabic">—</p>
+              <p id="event-description-da" class="event-description latin">—</p>
+            </div>
+            <div class="event-meta-list">
+              <div class="event-meta-item">
+                <p class="section-label arabic">الوقت</p>
+                <p class="section-label latin">Tid</p>
+                <p id="event-time-ar" class="event-meta-value arabic">—</p>
+                <p id="event-time-da" class="event-meta-value latin">—</p>
+              </div>
+              <div class="event-meta-item">
+                <p class="section-label arabic">المكان</p>
+                <p class="section-label latin">Sted</p>
+                <p id="event-location-ar" class="event-meta-value arabic">—</p>
+                <p id="event-location-da" class="event-meta-value latin">—</p>
+              </div>
+            </div>
+          </div>
+          <footer class="event-footer" aria-label="رسالة ختامية">
+            <p id="footer-ar" class="footer-line arabic">—</p>
+            <p id="footer-da" class="footer-line latin">—</p>
+          </footer>
+        </section>
+      </div>
+    </main>
+
+    <script type="module" src="js/display.js"></script>
+  </body>
+</html>

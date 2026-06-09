@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Imam Ali Moskeen Admin</title>
+    <meta
+      name="description"
+      content="Admin page for managing prayer times, events, and theme settings for Imam Ali Moskeen display."
+    >
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/themes.css">
+    <link rel="stylesheet" href="css/admin.css">
+  </head>
+  <body data-page="admin" data-theme="teal">
+    <main class="admin-shell">
+      <header class="admin-header panel">
+        <div>
+          <p class="admin-kicker">Imam Ali Moskeen</p>
+          <h1>Display Admin</h1>
+          <p class="admin-copy">
+            Manage prayer time JSON, upcoming events, and the active display theme. Saved data is stored in the browser.
+          </p>
+        </div>
+        <div class="admin-links">
+          <a class="button-link" href="index.html">Open Display</a>
+          <span id="admin-theme-badge" class="info-pill">Teal</span>
+        </div>
+      </header>
+
+      <section class="admin-grid">
+        <article class="panel admin-panel">
+          <div class="admin-panel-heading">
+            <div>
+              <h2>Prayer Times JSON</h2>
+              <p>Paste an array of daily entries with a <code>date</code> field and prayer times.</p>
+            </div>
+            <div class="button-row">
+              <button type="button" id="load-prayer-sample">Load Sample</button>
+              <button type="button" id="validate-prayer-times">Validate</button>
+              <button type="button" class="button-accent" id="save-prayer-times">Save</button>
+            </div>
+          </div>
+          <label class="sr-only" for="prayer-times-input">Prayer times JSON</label>
+          <textarea id="prayer-times-input" spellcheck="false" placeholder="Paste prayer times JSON here"></textarea>
+          <p id="prayer-times-status" class="status-line">No validation run yet.</p>
+        </article>
+
+        <article class="panel admin-panel">
+          <div class="admin-panel-heading">
+            <div>
+              <h2>Events JSON</h2>
+              <p>Paste an array of events with Arabic and Danish labels, dates, times, and theme names.</p>
+            </div>
+            <div class="button-row">
+              <button type="button" id="load-event-sample">Load Sample</button>
+              <button type="button" id="validate-events">Validate</button>
+              <button type="button" class="button-accent" id="save-events">Save</button>
+            </div>
+          </div>
+          <label class="sr-only" for="events-input">Events JSON</label>
+          <textarea id="events-input" spellcheck="false" placeholder="Paste events JSON here"></textarea>
+          <p id="events-status" class="status-line">No validation run yet.</p>
+        </article>
+
+        <article class="panel admin-panel">
+          <div class="admin-panel-heading">
+            <div>
+              <h2>Theme</h2>
+              <p>Select the active theme used by the display page.</p>
+            </div>
+          </div>
+          <fieldset class="theme-selector">
+            <legend class="sr-only">Theme selection</legend>
+            <label class="theme-option">
+              <input type="radio" name="theme" value="teal">
+              <span>
+                <strong>Teal</strong>
+                <small>Default daily theme</small>
+              </span>
+            </label>
+            <label class="theme-option">
+              <input type="radio" name="theme" value="muharram">
+              <span>
+                <strong>Muharram</strong>
+                <small>Solemn red theme</small>
+              </span>
+            </label>
+          </fieldset>
+          <div class="button-row">
+            <button type="button" class="button-accent" id="save-theme">Save Theme</button>
+          </div>
+          <p id="theme-status" class="status-line">Theme not changed in this session.</p>
+        </article>
+
+        <article class="panel admin-panel">
+          <div class="admin-panel-heading">
+            <div>
+              <h2>Saved Data Preview</h2>
+              <p>Quick summary of the data currently available to the display page.</p>
+            </div>
+          </div>
+          <div id="preview-panel" class="preview-panel">
+            <div class="preview-block">
+              <h3>Theme</h3>
+              <p id="preview-theme">—</p>
+            </div>
+            <div class="preview-block">
+              <h3>Prayer Times</h3>
+              <p id="preview-prayer-count">—</p>
+              <p id="preview-prayer-range">—</p>
+            </div>
+            <div class="preview-block">
+              <h3>Events</h3>
+              <p id="preview-event-count">—</p>
+              <p id="preview-next-event">—</p>
+            </div>
+          </div>
+          <div class="button-row">
+            <button type="button" id="refresh-preview">Refresh Preview</button>
+            <button type="button" class="button-danger" id="clear-local-data">Clear Local Data</button>
+          </div>
+          <p id="clear-status" class="status-line">Local data is currently intact.</p>
+        </article>
+      </section>
+    </main>
+
+    <script type="module" src="js/admin.js"></script>
+  </body>
+</html>

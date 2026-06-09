@@ -1,0 +1,13 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/api/today-prayer-times"
+  to = "/.netlify/functions/today-prayer-times"
+  status = 200
+
+[[redirects]]
+  from = "/api/upcoming-event"
+  to = "/.netlify/functions/upcoming-event"
+  status = 200
