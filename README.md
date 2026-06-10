@@ -16,7 +16,13 @@ Static digital signage web app for Imam Ali Moskeen. It is designed for portrait
 1. The display page first reads prayer times, events, and theme from `localStorage`.
 2. If there is no saved local data, it tries the sample JSON files.
 3. When opened with `file://`, browsers often block JSON fetches, so the app falls back to inline sample data that mirrors the sample files.
-4. The admin page validates pasted JSON before saving it to `localStorage`.
+4. The admin page validates and formats pasted JSON before saving it to `localStorage`.
+
+## Admin Notes
+
+- `admin.html` is intended for non-technical updates.
+- Saved data exists only in the browser and device where it was entered.
+- If you need one admin update to reach several screens automatically, add a shared backend later, such as Supabase.
 
 ## Run Locally
 

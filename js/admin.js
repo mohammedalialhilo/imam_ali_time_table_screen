@@ -1,11 +1,12 @@
 import { APP_CONFIG, SAMPLE_EVENTS, SAMPLE_PRAYER_TIMES } from "./config.js";
-import { getUpcomingEvent, validateEventsArray } from "./events.js";
+import { validateEventsArray } from "./events.js";
 import { validatePrayerTimesArray } from "./prayer-times.js";
 import {
   clearStoredDisplayData,
   getEventsFromStorage,
   getPrayerTimesFromStorage,
   getThemeFromStorage,
+  hasLocalStorageSupport,
   saveEventsToStorage,
   savePrayerTimesToStorage,
   saveThemeToStorage,
@@ -14,21 +15,21 @@ import {
 const elements = {
   body: document.body,
   adminThemeBadge: document.querySelector("#admin-theme-badge"),
+  generalStatus: document.querySelector("#admin-general-status"),
   prayerTimesInput: document.querySelector("#prayer-times-input"),
   eventsInput: document.querySelector("#events-input"),
   prayerTimesStatus: document.querySelector("#prayer-times-status"),
   eventsStatus: document.querySelector("#events-status"),
   themeStatus: document.querySelector("#theme-status"),
-  clearStatus: document.querySelector("#clear-status"),
-  previewTheme: document.querySelector("#preview-theme"),
-  previewPrayerCount: document.querySelector("#preview-prayer-count"),
-  previewPrayerRange: document.querySelector("#preview-prayer-range"),
-  previewEventCount: document.querySelector("#preview-event-count"),
-  previewNextEvent: document.querySelector("#preview-next-event"),
-  loadPrayerSample: document.querySelector("#load-prayer-sample"),
+  statusPanelNote: document.querySelector("#status-panel-note"),
+  statusPrayerCount: document.querySelector("#status-prayer-count"),
+  statusPrayerFirstDate: document.querySelector("#status-prayer-first-date"),
+  statusPrayerLastDate: document.querySelector("#status-prayer-last-date"),
+  statusEventCount: document.querySelector("#status-event-count"),
+  statusCurrentTheme: document.querySelector("#status-current-theme"),
+  loadSampleData: document.querySelector("#load-sample-data"),
   validatePrayerTimes: document.querySelector("#validate-prayer-times"),
   savePrayerTimes: document.querySelector("#save-prayer-times"),
-  loadEventSample: document.querySelector("#load-event-sample"),
   validateEvents: document.querySelector("#validate-events"),
   saveEvents: document.querySelector("#save-events"),
   saveTheme: document.querySelector("#save-theme"),
@@ -37,7 +38,17 @@ const elements = {
   themeInputs: [...document.querySelectorAll('input[name="theme"]')],
 };
 
+function setText(element, value) {
+  if (element) {
+    element.textContent = value;
+  }
+}
+
 function setStatus(element, message, tone = "") {
+  if (!element) {
+    return;
+  }
+
   element.textContent = message;
   element.className = "status-line";
   if (tone) {
@@ -49,10 +60,15 @@ function prettyJson(value) {
   return JSON.stringify(value, null, 2);
 }
 
+function sortByDate(entries) {
+  return [...entries].sort((left, right) => left.date.localeCompare(right.date));
+}
+
 function applyTheme(theme) {
   const safeTheme = APP_CONFIG.themes[theme] ? theme : APP_CONFIG.defaultTheme;
   elements.body.dataset.theme = safeTheme;
-  elements.adminThemeBadge.textContent = APP_CONFIG.themes[safeTheme].label;
+  setText(elements.adminThemeBadge, APP_CONFIG.themes[safeTheme].label);
+
   elements.themeInputs.forEach((input) => {
     input.checked = input.value === safeTheme;
   });
@@ -66,6 +82,10 @@ function parseJsonFromTextarea(textarea) {
   }
 }
 
+function formatValidationErrors(errors) {
+  return errors.join(" ");
+}
+
 function validatePrayerTextarea() {
   const parsed = parseJsonFromTextarea(elements.prayerTimesInput);
   if (!parsed.ok) {
@@ -75,11 +95,16 @@ function validatePrayerTextarea() {
 
   const validation = validatePrayerTimesArray(parsed.value);
   if (!validation.valid) {
-    setStatus(elements.prayerTimesStatus, validation.errors.join(" "), "error");
+    setStatus(elements.prayerTimesStatus, formatValidationErrors(validation.errors), "error");
     return null;
   }
 
-  setStatus(elements.prayerTimesStatus, `Valid prayer data with ${validation.normalized.length} day entries.`, "success");
+  elements.prayerTimesInput.value = prettyJson(validation.normalized);
+  setStatus(
+    elements.prayerTimesStatus,
+    `Prayer times are valid. ${validation.normalized.length} day entries formatted and ready to save.`,
+    "success",
+  );
   return validation.normalized;
 }
 
@@ -92,137 +117,204 @@ function validateEventTextarea() {
 
   const validation = validateEventsArray(parsed.value);
   if (!validation.valid) {
-    setStatus(elements.eventsStatus, validation.errors.join(" "), "error");
+    setStatus(elements.eventsStatus, formatValidationErrors(validation.errors), "error");
     return null;
   }
 
-  setStatus(elements.eventsStatus, `Valid event data with ${validation.normalized.length} items.`, "success");
+  elements.eventsInput.value = prettyJson(validation.normalized);
+  setStatus(
+    elements.eventsStatus,
+    `Events are valid. ${validation.normalized.length} entries formatted and ready to save.`,
+    "success",
+  );
   return validation.normalized;
 }
 
-function formatRange(entries) {
-  if (!Array.isArray(entries) || entries.length === 0) {
-    return "No entries saved.";
+function getSavedPrayerData() {
+  const savedPrayerTimes = getPrayerTimesFromStorage();
+  const validation = validatePrayerTimesArray(savedPrayerTimes);
+
+  return validation.valid ? sortByDate(validation.normalized) : [];
+}
+
+function getSavedEventData() {
+  const savedEvents = getEventsFromStorage();
+  const validation = validateEventsArray(savedEvents);
+
+  return validation.valid ? sortByDate(validation.normalized) : [];
+}
+
+function refreshStatusPanel() {
+  const savedPrayerTimes = getSavedPrayerData();
+  const savedEvents = getSavedEventData();
+  const currentTheme = getThemeFromStorage();
+
+  setText(elements.statusPrayerCount, String(savedPrayerTimes.length));
+  setText(elements.statusPrayerFirstDate, savedPrayerTimes[0]?.date ?? "—");
+  setText(elements.statusPrayerLastDate, savedPrayerTimes[savedPrayerTimes.length - 1]?.date ?? "—");
+  setText(elements.statusEventCount, String(savedEvents.length));
+  setText(elements.statusCurrentTheme, APP_CONFIG.themes[currentTheme].label);
+
+  if (savedPrayerTimes.length === 0 && savedEvents.length === 0) {
+    setStatus(
+      elements.statusPanelNote,
+      "No saved browser data found. The display will use bundled sample fallback data.",
+      "warning",
+    );
+    return;
   }
 
-  const sorted = [...entries].sort((left, right) => left.date.localeCompare(right.date));
-  return `${sorted[0].date} -> ${sorted[sorted.length - 1].date}`;
-}
+  if (savedPrayerTimes.length === 0 || savedEvents.length === 0) {
+    setStatus(
+      elements.statusPanelNote,
+      "Saved browser data is partial. Any missing section on the display will fall back to sample data.",
+      "warning",
+    );
+    return;
+  }
 
-function refreshPreview() {
-  const theme = getThemeFromStorage();
-  const savedPrayerTimes = getPrayerTimesFromStorage();
-  const savedEvents = getEventsFromStorage();
-
-  const prayerValidation = validatePrayerTimesArray(savedPrayerTimes);
-  const eventValidation = validateEventsArray(savedEvents);
-
-  const prayerData = prayerValidation.valid && prayerValidation.normalized.length > 0
-    ? prayerValidation.normalized
-    : SAMPLE_PRAYER_TIMES;
-  const eventData = eventValidation.valid && eventValidation.normalized.length > 0
-    ? eventValidation.normalized
-    : SAMPLE_EVENTS;
-
-  applyTheme(theme);
-  elements.previewTheme.textContent = APP_CONFIG.themes[theme].label;
-  elements.previewPrayerCount.textContent = `${prayerData.length} daily entries`;
-  elements.previewPrayerRange.textContent = formatRange(prayerData);
-  elements.previewEventCount.textContent = `${eventData.length} events`;
-
-  const upcomingEvent = getUpcomingEvent(eventData, new Date());
-  elements.previewNextEvent.textContent = upcomingEvent
-    ? `${upcomingEvent.titleDanish} - ${upcomingEvent.date} ${upcomingEvent.time}`
-    : "No active upcoming event.";
-}
-
-function populateInputs() {
-  const savedPrayerTimes = getPrayerTimesFromStorage();
-  const savedEvents = getEventsFromStorage();
-  const prayerValidation = validatePrayerTimesArray(savedPrayerTimes);
-  const eventValidation = validateEventsArray(savedEvents);
-
-  elements.prayerTimesInput.value = prettyJson(
-    prayerValidation.valid && prayerValidation.normalized.length > 0
-      ? prayerValidation.normalized
-      : SAMPLE_PRAYER_TIMES
+  setStatus(
+    elements.statusPanelNote,
+    "Saved browser data is available in this browser and can be read by index.html.",
+    "success",
   );
+}
 
-  elements.eventsInput.value = prettyJson(
-    eventValidation.valid && eventValidation.normalized.length > 0
-      ? eventValidation.normalized
-      : SAMPLE_EVENTS
+function populateEditors() {
+  const savedPrayerTimes = getSavedPrayerData();
+  const savedEvents = getSavedEventData();
+
+  elements.prayerTimesInput.value = prettyJson(savedPrayerTimes.length > 0 ? savedPrayerTimes : SAMPLE_PRAYER_TIMES);
+  elements.eventsInput.value = prettyJson(savedEvents.length > 0 ? savedEvents : SAMPLE_EVENTS);
+}
+
+function loadSampleDataIntoEditors() {
+  elements.prayerTimesInput.value = prettyJson(SAMPLE_PRAYER_TIMES);
+  elements.eventsInput.value = prettyJson(SAMPLE_EVENTS);
+}
+
+function setGeneralReadyState() {
+  if (hasLocalStorageSupport()) {
+    setStatus(
+      elements.generalStatus,
+      "Ready. Validate each JSON box before saving. Saved data stays only in this browser.",
+      "success",
+    );
+    return;
+  }
+
+  setStatus(
+    elements.generalStatus,
+    "This browser does not allow localStorage. You can validate JSON here, but saving will not work.",
+    "error",
   );
 }
 
 function bindEvents() {
-  elements.loadPrayerSample.addEventListener("click", () => {
-    elements.prayerTimesInput.value = prettyJson(SAMPLE_PRAYER_TIMES);
-    setStatus(elements.prayerTimesStatus, "Sample prayer times loaded into the editor.", "warning");
+  elements.loadSampleData.addEventListener("click", () => {
+    loadSampleDataIntoEditors();
+    setStatus(elements.prayerTimesStatus, "Sample prayer times loaded into the editor. Validate before saving.", "warning");
+    setStatus(elements.eventsStatus, "Sample events loaded into the editor. Validate before saving.", "warning");
+    setStatus(elements.generalStatus, "Sample data loaded into both editors. Nothing has been saved yet.", "warning");
   });
 
   elements.validatePrayerTimes.addEventListener("click", () => {
-    validatePrayerTextarea();
+    const validated = validatePrayerTextarea();
+    if (validated) {
+      setStatus(elements.generalStatus, "Prayer-time JSON is valid and formatted. Save it to update this browser.", "success");
+    }
   });
 
   elements.savePrayerTimes.addEventListener("click", () => {
     const normalized = validatePrayerTextarea();
     if (!normalized) {
+      setStatus(elements.generalStatus, "Prayer-time JSON could not be saved because validation failed.", "error");
       return;
     }
 
-    savePrayerTimesToStorage(normalized);
-    setStatus(elements.prayerTimesStatus, `Saved ${normalized.length} prayer entries to localStorage.`, "success");
-    refreshPreview();
-  });
+    if (!savePrayerTimesToStorage(normalized)) {
+      setStatus(elements.prayerTimesStatus, "Could not save prayer times to localStorage in this browser.", "error");
+      setStatus(elements.generalStatus, "Prayer times were not saved.", "error");
+      return;
+    }
 
-  elements.loadEventSample.addEventListener("click", () => {
-    elements.eventsInput.value = prettyJson(SAMPLE_EVENTS);
-    setStatus(elements.eventsStatus, "Sample events loaded into the editor.", "warning");
+    setStatus(elements.prayerTimesStatus, `Saved ${normalized.length} prayer-time days to this browser.`, "success");
+    setStatus(elements.generalStatus, "Prayer times saved. index.html will now read the saved browser values.", "success");
+    refreshStatusPanel();
   });
 
   elements.validateEvents.addEventListener("click", () => {
-    validateEventTextarea();
+    const validated = validateEventTextarea();
+    if (validated) {
+      setStatus(elements.generalStatus, "Events JSON is valid and formatted. Save it to update this browser.", "success");
+    }
   });
 
   elements.saveEvents.addEventListener("click", () => {
     const normalized = validateEventTextarea();
     if (!normalized) {
+      setStatus(elements.generalStatus, "Events JSON could not be saved because validation failed.", "error");
       return;
     }
 
-    saveEventsToStorage(normalized);
-    setStatus(elements.eventsStatus, `Saved ${normalized.length} events to localStorage.`, "success");
-    refreshPreview();
+    if (!saveEventsToStorage(normalized)) {
+      setStatus(elements.eventsStatus, "Could not save events to localStorage in this browser.", "error");
+      setStatus(elements.generalStatus, "Events were not saved.", "error");
+      return;
+    }
+
+    setStatus(elements.eventsStatus, `Saved ${normalized.length} events to this browser.`, "success");
+    setStatus(elements.generalStatus, "Events saved. index.html will now read the saved browser values.", "success");
+    refreshStatusPanel();
+  });
+
+  elements.themeInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      applyTheme(input.value);
+      setStatus(elements.themeStatus, `Theme selected: ${APP_CONFIG.themes[input.value].label}. Click Save Theme to store it.`, "warning");
+    });
   });
 
   elements.saveTheme.addEventListener("click", () => {
     const selectedTheme = elements.themeInputs.find((input) => input.checked)?.value ?? APP_CONFIG.defaultTheme;
-    saveThemeToStorage(selectedTheme);
+    if (!saveThemeToStorage(selectedTheme)) {
+      setStatus(elements.themeStatus, "Could not save the theme to localStorage in this browser.", "error");
+      setStatus(elements.generalStatus, "Theme was not saved.", "error");
+      return;
+    }
+
     applyTheme(selectedTheme);
     setStatus(elements.themeStatus, `Theme saved as ${APP_CONFIG.themes[selectedTheme].label}.`, "success");
-    refreshPreview();
+    setStatus(elements.generalStatus, "Theme saved. index.html will use the selected theme in this browser.", "success");
+    refreshStatusPanel();
   });
 
   elements.refreshPreview.addEventListener("click", () => {
-    refreshPreview();
-    setStatus(elements.clearStatus, "Preview refreshed from current browser storage.", "success");
+    refreshStatusPanel();
+    setStatus(elements.generalStatus, "Saved-data status refreshed from this browser.", "success");
   });
 
   elements.clearLocalData.addEventListener("click", () => {
-    clearStoredDisplayData();
-    populateInputs();
+    if (!clearStoredDisplayData()) {
+      setStatus(elements.generalStatus, "Could not clear localStorage in this browser.", "error");
+      return;
+    }
+
     applyTheme(APP_CONFIG.defaultTheme);
-    setStatus(elements.clearStatus, "Prayer times, events, and theme were cleared from localStorage.", "warning");
-    setStatus(elements.themeStatus, "Theme reset to default teal after clearing local data.", "warning");
-    refreshPreview();
+    loadSampleDataIntoEditors();
+    setStatus(elements.prayerTimesStatus, "Saved prayer times cleared. The editor now shows sample fallback data.", "warning");
+    setStatus(elements.eventsStatus, "Saved events cleared. The editor now shows sample fallback data.", "warning");
+    setStatus(elements.themeStatus, "Saved theme cleared. The display will fall back to teal.", "warning");
+    setStatus(elements.generalStatus, "Saved browser data cleared. index.html will now fall back to sample data.", "warning");
+    refreshStatusPanel();
   });
 }
 
 function initAdmin() {
   applyTheme(getThemeFromStorage());
-  populateInputs();
-  refreshPreview();
+  populateEditors();
+  refreshStatusPanel();
+  setGeneralReadyState();
   bindEvents();
 }
 

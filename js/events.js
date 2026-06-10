@@ -6,7 +6,7 @@ const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 function normalizeEvent(entry = {}, index = 0) {
   return {
-    id: String(entry.id ?? `event-${index + 1}`).trim(),
+    id: String(entry.id ?? "").trim(),
     titleArabic: String(entry.titleArabic ?? "").trim(),
     titleDanish: String(entry.titleDanish ?? "").trim(),
     date: String(entry.date ?? "").trim(),
@@ -16,7 +16,7 @@ function normalizeEvent(entry = {}, index = 0) {
     descriptionArabic: String(entry.descriptionArabic ?? "").trim(),
     descriptionDanish: String(entry.descriptionDanish ?? "").trim(),
     theme: APP_CONFIG.themes[entry.theme] ? entry.theme : APP_CONFIG.defaultTheme,
-    active: Boolean(entry.active),
+    active: entry.active === true,
   };
 }
 
@@ -26,7 +26,10 @@ function sanitizeEvent(entry, index) {
     return null;
   }
 
-  return normalized;
+  return {
+    ...normalized,
+    id: normalized.id || `event-${index + 1}`,
+  };
 }
 
 function sanitizeEventsArray(input) {
@@ -101,6 +104,8 @@ export function validateEventsArray(input) {
   const normalized = input.map(normalizeEvent);
 
   normalized.forEach((event, index) => {
+    const source = input[index] ?? {};
+
     if (!event.id) {
       errors.push(`Event ${index + 1}: id is required.`);
     }
@@ -117,8 +122,8 @@ export function validateEventsArray(input) {
       errors.push(`Event ${index + 1}: both Arabic and Danish titles are required.`);
     }
 
-    if (!event.locationArabic || !event.locationDanish) {
-      errors.push(`Event ${index + 1}: both Arabic and Danish locations are required.`);
+    if (typeof source.active !== "boolean") {
+      errors.push(`Event ${index + 1}: active must be true or false.`);
     }
   });
 
