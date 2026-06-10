@@ -3,6 +3,16 @@
   functions = "netlify/functions"
 
 [[redirects]]
+  from = "/display"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/admin"
+  to = "/admin.html"
+  status = 200
+
+[[redirects]]
   from = "/api/today-prayer-times"
   to = "/.netlify/functions/today-prayer-times"
   status = 200

@@ -188,6 +188,11 @@ textarea {
   pointer-events: none;
 }
 
+.panel > *,
+.panel-heading > * {
+  min-width: 0;
+}
+
 .arabic {
   font-family: var(--font-arabic);
   letter-spacing: 0;

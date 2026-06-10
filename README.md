@@ -11,6 +11,11 @@ Static digital signage web app for Imam Ali Moskeen. It is designed for portrait
 - `data/`: sample JSON fallbacks
 - `netlify/functions/`: simple JSON API endpoints for today's prayer times and the upcoming event
 
+## Documentation
+
+- [USER_ADMIN_MANUAL.md](USER_ADMIN_MANUAL.md): step-by-step guide for mosque staff and admins
+- [DEVELOPER_MANUAL.md](DEVELOPER_MANUAL.md): technical architecture, data flow, deployment, and upgrade notes
+
 ## How It Works
 
 1. The display page first reads prayer times, events, and theme from `localStorage`.
@@ -49,9 +54,12 @@ The active theme is controlled from `admin.html` and stored in the browser.
 
 ## Netlify
 
+- No build step is required.
 - Static publish directory: project root
 - Functions directory: `netlify/functions`
 - Redirects:
+  - `/display` -> `index.html`
+  - `/admin` -> `admin.html`
   - `/api/today-prayer-times`
   - `/api/upcoming-event`
 

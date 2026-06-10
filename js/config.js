@@ -33,8 +33,8 @@ export const APP_CONFIG = {
     events: "data/events.sample.json",
   },
   apiPaths: {
-    todayPrayerTimes: "/.netlify/functions/today-prayer-times",
-    upcomingEvent: "/.netlify/functions/upcoming-event",
+    todayPrayerTimes: "/api/today-prayer-times",
+    upcomingEvent: "/api/upcoming-event",
   },
   footerMessages: {
     teal: {

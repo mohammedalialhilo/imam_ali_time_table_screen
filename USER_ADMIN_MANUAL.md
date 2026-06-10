@@ -1,56 +1,90 @@
-# User Admin Manual
+# USER ADMIN MANUAL
 
-## What this page does
+## What this website does
 
-`admin.html` lets a masjid admin update:
+This website is a digital screen system for the mosque.
 
-- prayer times
+It shows:
+
+- today's prayer times
+- the current time and date
+- the Hijri date
+- the next prayer and live countdown
 - upcoming events
-- the display theme
+- either the normal teal theme or the Muharram red theme
 
-No code editing is needed.
+There are two main pages:
 
-## Important storage note
+- `index.html`: the public display screen
+- `admin.html`: the update page for mosque staff
 
-This version saves data only in `localStorage`.
+You do not need to edit code to use it.
 
-That means:
+## Before you start
 
-- data is saved only on the device and browser where `admin.html` is used
-- another computer, TV box, tablet, or browser will not receive the update automatically
-- if you clear browser storage, the saved data is removed from that browser
+This version saves data in the browser using `localStorage`.
 
-For real multi-screen syncing later, the project should use an online database such as Supabase.
+This is important:
 
-## Open the admin page
+- data is saved only in the same browser on the same device
+- if you use `admin.html` on one laptop, another laptop will not receive the update automatically
+- if the display screen uses a different browser or device, you must save the same data there as well
 
-1. Open `admin.html` in the browser that should control the screen.
-2. Use **Open Display Preview** to open `index.html`.
-3. Keep both pages in the same browser profile if you want the preview to read the saved values immediately.
+Recommended future upgrade:
 
-## Main buttons
+- connect the project to Supabase or another online database so one admin update can sync to all screens
 
-- `Load Sample Data`:
-  fills both JSON editors with sample data, but does not save it
-- `Clear Saved Data`:
-  removes saved prayer times, events, and theme from this browser
-- `Open Display Preview`:
-  opens `index.html`
+## How to open the display screen
 
-## Update prayer times
+1. Open `index.html` in a browser.
+2. Put that page on the TV, kiosk, or vertical screen you want to use.
+3. For the best result, use full screen mode in the browser.
 
-1. Paste your prayer-times JSON into **Prayer Times JSON**.
-2. Click **Validate Prayer Times**.
-3. If the message says the data is valid, click **Save Prayer Times**.
-4. Open or refresh `index.html` in the same browser to confirm the update.
+The display page updates the live clock every second and reloads automatically shortly after midnight.
 
-After successful validation, the JSON box is automatically formatted.
+## How to open the admin page
 
-### Prayer-times rules
+1. Open `admin.html` in the browser you want to use for updates.
+2. Use the **Open Display Preview** button to open `index.html`.
+3. Keep `admin.html` and `index.html` in the same browser profile if you want the preview to read the saved data immediately.
 
-The data must be an array.
+## What you can do in the admin page
 
-Each object must include:
+The admin page lets you:
+
+- paste prayer times JSON
+- paste events JSON
+- validate prayer times before saving
+- validate events before saving
+- save prayer times
+- save events
+- load sample data into both editors
+- clear saved data
+- choose the active theme
+- open the display preview
+- check the saved-data status panel
+
+## Recommended update workflow
+
+1. Open `admin.html`
+2. Paste the monthly prayer times JSON
+3. Click **Validate Prayer Times**
+4. Click **Save Prayer Times**
+5. Paste the events JSON
+6. Click **Validate Events**
+7. Click **Save Events**
+8. Select the theme if needed
+9. Click **Save Theme**
+10. Open or refresh `index.html`
+11. Confirm the display looks correct
+
+## How to add monthly prayer times
+
+Prayer times are saved as a JSON array.
+
+Each day must be one object in the array.
+
+### Required fields for each day
 
 - `date`
 - `fajr`
@@ -60,20 +94,47 @@ Each object must include:
 - `maghrib`
 - `isha`
 
-Optional fields:
+### Optional fields
 
 - `hijriDateArabic`
 - `hijriDateLatin`
 
-### Formats
+### Date and time format
 
-- `date` must be `YYYY-MM-DD`
-- prayer times must be `HH:mm`
+- `date` must use `YYYY-MM-DD`
+- times must use `HH:mm`
 
-### Example
+Examples:
+
+- correct date: `2026-06-10`
+- correct time: `17:40`
+
+### Steps
+
+1. Prepare one JSON array for the month.
+2. Paste it into the **Prayer Times JSON** box.
+3. Click **Validate Prayer Times**.
+4. If the message says the data is valid, click **Save Prayer Times**.
+5. The saved-data status panel should update with:
+   - number of prayer-time days
+   - first date
+   - last date
+
+### Prayer times JSON example
 
 ```json
 [
+  {
+    "date": "2026-06-09",
+    "hijriDateArabic": "23 ذو الحجة 1447 هـ",
+    "hijriDateLatin": "23 Dhu al-Hijjah 1447 H",
+    "fajr": "02:29",
+    "sunrise": "04:28",
+    "dhuhr": "13:09",
+    "asr": "17:39",
+    "maghrib": "21:51",
+    "isha": "23:43"
+  },
   {
     "date": "2026-06-10",
     "hijriDateArabic": "24 ذو الحجة 1447 هـ",
@@ -88,20 +149,13 @@ Optional fields:
 ]
 ```
 
-## Update events
+## How to add upcoming events
 
-1. Paste your events JSON into **Events JSON**.
-2. Click **Validate Events**.
-3. If the message says the data is valid, click **Save Events**.
-4. Open or refresh `index.html` in the same browser to confirm the update.
+Events are also saved as a JSON array.
 
-After successful validation, the JSON box is automatically formatted.
+The display shows the nearest active upcoming event.
 
-### Event rules
-
-The data must be an array.
-
-Each object must include:
+### Required fields for each event
 
 - `id`
 - `titleArabic`
@@ -110,7 +164,7 @@ Each object must include:
 - `time`
 - `active`
 
-Optional fields:
+### Optional fields
 
 - `locationArabic`
 - `locationDanish`
@@ -118,71 +172,179 @@ Optional fields:
 - `descriptionDanish`
 - `theme`
 
-### Formats
+### Date and time format
 
-- `date` must be `YYYY-MM-DD`
-- `time` must be `HH:mm`
+- `date` must use `YYYY-MM-DD`
+- `time` must use `HH:mm`
 - `active` must be `true` or `false`
 
-### Example
+### Steps
+
+1. Paste the event array into the **Events JSON** box.
+2. Click **Validate Events**.
+3. If the message says the data is valid, click **Save Events**.
+4. The saved-data status panel should update the event count.
+
+### Events JSON example
 
 ```json
 [
   {
     "id": "event-001",
     "titleArabic": "صلاة الجمعة",
-    "titleDanish": "Fredagsbøn",
+    "titleDanish": "Fredagsbøn (Jumu'ah)",
     "date": "2026-06-12",
     "time": "13:30",
     "locationArabic": "الجامع الرئيسي",
     "locationDanish": "Hovedmoskeen",
-    "descriptionArabic": "مرحباً بكم",
-    "descriptionDanish": "Alle er velkomne",
+    "descriptionArabic": "مرحباً بكم - نسعد بزيارتكم",
+    "descriptionDanish": "Alle er velkomne - Vi glæder os til at se dig",
     "theme": "teal",
+    "active": true
+  },
+  {
+    "id": "event-002",
+    "titleArabic": "مجلس الليلة الأولى من محرم",
+    "titleDanish": "Majlis – første aften af Muharram",
+    "date": "2026-06-13",
+    "time": "19:30",
+    "locationArabic": "الجامع الرئيسي",
+    "locationDanish": "Hovedmoskeen",
+    "descriptionArabic": "ذكرى استشهاد الإمام الحسين عليه السلام",
+    "descriptionDanish": "Mindehøjtidelighed for Imam Hussein",
+    "theme": "muharram",
     "active": true
   }
 ]
 ```
 
-## Change theme
+## How to switch the theme
 
-1. Select `Teal` or `Muharram`.
-2. Click **Save Theme**.
-3. Refresh `index.html` if needed.
+The project includes two themes:
 
-## Saved Data Status panel
+- `teal`: the normal daily display theme
+- `muharram`: the black and red Muharram theme
 
-The status panel shows what is saved in this browser:
+### Steps
 
-- prayer-time days
-- first date
-- last date
-- saved events
-- current theme
+1. In `admin.html`, find the **Theme** section.
+2. Select `Teal` or `Muharram`.
+3. Click **Save Theme**.
+4. Refresh `index.html` if the new theme does not appear immediately.
 
-Use **Refresh Status** if you want to re-read the saved browser data.
+## How to check that the display updated
+
+After saving data in `admin.html`:
+
+1. Open `index.html` in the same browser.
+2. Check that the prayer times match the data you saved.
+3. Check that the event section shows the correct upcoming event.
+4. Check that the selected theme is visible.
+5. Check that the prayer row highlight and next-prayer card look correct.
+
+Useful signs that the display updated:
+
+- the prayer list matches your saved dates and times
+- the event card shows your saved event
+- the theme color changed
+- the display is reading saved local data instead of old sample data
+
+## What to do if today's prayer times are missing
+
+If the display says today's prayer data is missing:
+
+1. Open `admin.html`.
+2. Check the **Saved Data Status** panel.
+3. Look at the first and last prayer dates.
+4. Confirm that today's date is included in your saved prayer-time JSON.
+5. If today's date is missing, add it to the prayer-times array.
+6. Validate again.
+7. Save again.
+8. Refresh `index.html`.
+
+Also check:
+
+- that you saved data in the same browser and device as the display
+- that the date format is exactly `YYYY-MM-DD`
+- that all required prayer fields are present
+
+## What to do if the screen looks wrong
+
+If the display looks incorrect:
+
+1. Refresh `index.html`.
+2. Confirm the correct theme is selected and saved.
+3. Confirm the prayer times JSON is valid.
+4. Confirm the events JSON is valid.
+5. Check that the saved-data status panel shows the expected date range and counts.
+6. Make sure you are using the same browser/device as the screen.
+
+If you still have a problem:
+
+1. Click **Load Sample Data** in `admin.html` to load known-good example data into the editors.
+2. Do not save yet unless you want to replace your current saved data.
+3. Compare the sample format with your own JSON.
+4. If needed, click **Clear Saved Data** and let the display return to sample fallback data.
+
+## How to refresh the screen
+
+You can refresh the display in any of these ways:
+
+- press the browser refresh button
+- press `F5`
+- close and reopen `index.html`
+- reopen the page from the kiosk browser
+
+The display also reloads automatically shortly after midnight to pick up the new day.
+
+## How to use it on multiple screens
+
+Because this version uses `localStorage`, there is no central online admin yet.
+
+That means:
+
+- each screen or device stores its own saved data
+- one update does not automatically sync to all screens
+
+### If you have multiple screens now
+
+Use one of these methods:
+
+1. Open `admin.html` on each screen device and save the same data there.
+2. Use the same browser profile on the same device that runs the display.
+3. If several displays run from one device/browser profile, they can share the same saved data there.
+
+### Recommended future upgrade
+
+For proper mosque-wide multi-screen syncing, connect the app to:
+
+- Supabase
+- Firebase
+- another online database and admin backend
+
+That would allow:
+
+- one central admin page
+- one source of truth for prayer times and events
+- automatic updates across all screens
 
 ## Clear saved data
 
-1. Click **Clear Saved Data**.
-2. The saved browser data is removed.
-3. The editors will show sample fallback data again.
-4. `index.html` will return to fallback sample data and the default teal theme.
+If you want to remove the saved browser data:
 
-## If validation fails
+1. Open `admin.html`.
+2. Click **Clear Saved Data**.
+3. The saved prayer times, events, and theme will be removed from that browser.
+4. The editors will show sample fallback data again.
+5. `index.html` will go back to sample fallback data and the default teal theme.
 
-- invalid JSON will show an error message
-- invalid data will not be saved
-- fix the message shown under the editor, then validate again
+## Final reminder
 
-## Recommended workflow
+This version is good for:
 
-1. Open `admin.html`
-2. Paste prayer times
-3. Validate prayer times
-4. Save prayer times
-5. Paste events
-6. Validate events
-7. Save events
-8. Save the theme if needed
-9. Open `index.html` and confirm the display
+- a single device
+- a single browser profile
+- local testing
+- small manual setups
+
+For a permanent multi-screen mosque setup, the next recommended step is a shared backend such as Supabase.
