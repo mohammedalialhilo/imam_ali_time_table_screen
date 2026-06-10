@@ -1,4 +1,5 @@
 import { APP_CONFIG, SAMPLE_PRAYER_TIMES } from "./config.js";
+import { loadPrayerTimesFromRemote } from "./remote-data.js";
 import { getPrayerTimesFromStorage } from "./storage.js";
 
 const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -16,6 +17,45 @@ function isValidTimeString(timeString) {
   return TIME_PATTERN.test(String(timeString ?? "").trim());
 }
 
+function getSafeDisplayMode(mode = APP_CONFIG.prayerDisplayMode) {
+  return APP_CONFIG.prayerDisplayModes[mode] ? mode : APP_CONFIG.prayerDisplayMode;
+}
+
+function isRealCalendarDate(dateKey) {
+  if (!isValidDateKey(dateKey)) {
+    return false;
+  }
+
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const parsed = new Date(year, month - 1, day, 12, 0, 0, 0);
+  return (
+    parsed.getFullYear() === year &&
+    parsed.getMonth() === month - 1 &&
+    parsed.getDate() === day
+  );
+}
+
+export function getDisplayPrayerKeys(mode = APP_CONFIG.prayerDisplayMode) {
+  return [...APP_CONFIG.prayerDisplayModes[getSafeDisplayMode(mode)].order];
+}
+
+export function getCountdownPrayerKeys(mode = APP_CONFIG.prayerDisplayMode) {
+  return [...APP_CONFIG.prayerDisplayModes[getSafeDisplayMode(mode)].countdownOrder];
+}
+
+export function getPrayerMetaForMode(prayerKey, mode = APP_CONFIG.prayerDisplayMode) {
+  const safeMode = getSafeDisplayMode(mode);
+  const baseMeta = APP_CONFIG.prayerMeta[prayerKey] ?? {};
+  const labelMeta = APP_CONFIG.prayerDisplayModes[safeMode].labels[prayerKey] ?? {};
+
+  return {
+    key: prayerKey,
+    icon: baseMeta.icon ?? "sun",
+    arabic: labelMeta.arabic ?? prayerKey,
+    danish: labelMeta.danish ?? prayerKey,
+  };
+}
+
 function normalizePrayerEntry(entry = {}) {
   const normalized = {
     date: String(entry.date ?? "").trim(),
@@ -23,7 +63,7 @@ function normalizePrayerEntry(entry = {}) {
     hijriDateLatin: String(entry.hijriDateLatin ?? "").trim(),
   };
 
-  APP_CONFIG.prayerOrder.forEach((key) => {
+  APP_CONFIG.prayerFields.forEach((key) => {
     normalized[key] = String(entry[key] ?? "").trim();
   });
 
@@ -32,12 +72,12 @@ function normalizePrayerEntry(entry = {}) {
 
 function sanitizePrayerEntry(entry) {
   const normalized = normalizePrayerEntry(entry);
-  if (!isValidDateKey(normalized.date)) {
+  if (!isValidDateKey(normalized.date) || !isRealCalendarDate(normalized.date)) {
     return null;
   }
 
   const sanitized = { ...normalized };
-  APP_CONFIG.prayerOrder.forEach((key) => {
+  APP_CONFIG.prayerFields.forEach((key) => {
     sanitized[key] = isValidTimeString(normalized[key]) ? normalized[key] : "";
   });
 
@@ -121,8 +161,12 @@ async function loadSamplePrayerTimesFromFile() {
 
 async function loadPrayerTimesFromFunction(date = new Date()) {
   const requestedDate = getLocalDateKey(date);
-  const endpoint = `${APP_CONFIG.apiPaths.todayPrayerTimes}?date=${encodeURIComponent(requestedDate)}`;
-  return fetchPrayerTimesJson(endpoint);
+  const result = await loadPrayerTimesFromRemote(requestedDate);
+  if (!result.ok) {
+    return [];
+  }
+
+  return sanitizePrayerTimesArray(normalizePrayerPayload(result.data));
 }
 
 function addLocalDays(date, days) {
@@ -137,7 +181,7 @@ function findPrayerEntry(prayerTimes, dateKey) {
   return prayerTimes.find((entry) => entry.date === dateKey) ?? null;
 }
 
-function buildPrayerCandidate(entry, prayerKey) {
+function buildPrayerCandidate(entry, prayerKey, mode = APP_CONFIG.prayerDisplayMode) {
   if (!entry || !APP_CONFIG.prayerMeta[prayerKey]) {
     return null;
   }
@@ -150,14 +194,51 @@ function buildPrayerCandidate(entry, prayerKey) {
 
   return {
     key: prayerKey,
-    label: APP_CONFIG.prayerMeta[prayerKey],
+    label: getPrayerMetaForMode(prayerKey, mode),
     time,
     at,
     dateKey: entry.date,
   };
 }
 
-export function validatePrayerTimesArray(input) {
+function validateFlexibleSchema(entry, index, errors, schema) {
+  const requiredBaseFields = ["fajr", "sunrise", "dhuhr", "maghrib"];
+  requiredBaseFields.forEach((key) => {
+    if (!isValidTimeString(entry[key])) {
+      errors.push(`Entry ${index + 1}: ${key} must use HH:mm.`);
+    }
+  });
+
+  if (schema === "standard") {
+    if (!isValidTimeString(entry.asr)) {
+      errors.push(`Entry ${index + 1}: asr must use HH:mm.`);
+    }
+    if (!isValidTimeString(entry.isha)) {
+      errors.push(`Entry ${index + 1}: isha must use HH:mm.`);
+    }
+    return;
+  }
+
+  if (schema === "imamAliCopenhagen") {
+    if (!isValidTimeString(entry.sunset)) {
+      errors.push(`Entry ${index + 1}: sunset must use HH:mm.`);
+    }
+    if (!isValidTimeString(entry.midnight)) {
+      errors.push(`Entry ${index + 1}: midnight must use HH:mm.`);
+    }
+    return;
+  }
+
+  if (!isValidTimeString(entry.asr) && !isValidTimeString(entry.sunset)) {
+    errors.push(`Entry ${index + 1}: provide either asr or sunset in HH:mm.`);
+  }
+
+  if (!isValidTimeString(entry.isha) && !isValidTimeString(entry.midnight)) {
+    errors.push(`Entry ${index + 1}: provide either isha or midnight in HH:mm.`);
+  }
+}
+
+export function validatePrayerTimesArray(input, options = {}) {
   if (!Array.isArray(input)) {
     return {
       valid: false,
@@ -166,19 +247,35 @@ export function validatePrayerTimesArray(input) {
     };
   }
 
+  const schema = options.schema ?? "any";
   const errors = [];
   const normalized = input.map(normalizePrayerEntry);
+  const duplicateDates = new Map();
+
+  normalized.forEach((entry) => {
+    if (entry.date) {
+      duplicateDates.set(entry.date, (duplicateDates.get(entry.date) ?? 0) + 1);
+    }
+  });
 
   normalized.forEach((entry, index) => {
     if (!isValidDateKey(entry.date)) {
       errors.push(`Entry ${index + 1}: date must use YYYY-MM-DD.`);
+    } else if (!isRealCalendarDate(entry.date)) {
+      errors.push(`Entry ${index + 1}: date is not a real calendar date.`);
     }
 
-    APP_CONFIG.prayerOrder.forEach((key) => {
-      if (!isValidTimeString(entry[key])) {
-        errors.push(`Entry ${index + 1}: ${key} must use HH:mm.`);
+    APP_CONFIG.prayerFields.forEach((key) => {
+      if (entry[key] && !isValidTimeString(entry[key])) {
+        errors.push(`Entry ${index + 1}: ${key} must use HH:mm or stay empty.`);
       }
     });
+
+    validateFlexibleSchema(entry, index, errors, schema);
+
+    if (entry.date && duplicateDates.get(entry.date) > 1) {
+      errors.push(`Entry ${index + 1}: duplicate date ${entry.date}.`);
+    }
   });
 
   return {
@@ -189,6 +286,11 @@ export function validatePrayerTimesArray(input) {
 }
 
 export async function loadPrayerTimes() {
+  const functionPrayerTimes = await loadPrayerTimesFromFunction();
+  if (functionPrayerTimes.length > 0) {
+    return { items: functionPrayerTimes, source: "supabase-function" };
+  }
+
   const storedPrayerTimes = sanitizePrayerTimesArray(getPrayerTimesFromStorage());
   if (storedPrayerTimes.length > 0) {
     return { items: storedPrayerTimes, source: "localStorage" };
@@ -197,11 +299,6 @@ export async function loadPrayerTimes() {
   const filePrayerTimes = await loadSamplePrayerTimesFromFile();
   if (filePrayerTimes.length > 0) {
     return { items: filePrayerTimes, source: "sample-file" };
-  }
-
-  const functionPrayerTimes = await loadPrayerTimesFromFunction();
-  if (functionPrayerTimes.length > 0) {
-    return { items: functionPrayerTimes, source: "netlify-function" };
   }
 
   return {
@@ -234,7 +331,14 @@ export function getTomorrowPrayerTimes(prayerTimes, date = new Date()) {
   return findPrayerEntry(prayerTimes, getLocalDateKey(addLocalDays(date, 1)));
 }
 
-export function getNextPrayer(todayEntry, now = new Date(), tomorrowEntry = null) {
+export function getNextPrayer(
+  todayEntry,
+  now = new Date(),
+  tomorrowEntry = null,
+  mode = APP_CONFIG.prayerDisplayMode,
+) {
+  const countdownKeys = getCountdownPrayerKeys(mode);
+
   if (!todayEntry) {
     return {
       status: "missing-today",
@@ -247,8 +351,8 @@ export function getNextPrayer(todayEntry, now = new Date(), tomorrowEntry = null
     };
   }
 
-  for (const prayerKey of APP_CONFIG.prayerOrder) {
-    const candidate = buildPrayerCandidate(todayEntry, prayerKey);
+  for (const prayerKey of countdownKeys) {
+    const candidate = buildPrayerCandidate(todayEntry, prayerKey, mode);
     if (candidate && candidate.at.getTime() >= now.getTime()) {
       return {
         ...candidate,
@@ -258,13 +362,15 @@ export function getNextPrayer(todayEntry, now = new Date(), tomorrowEntry = null
     }
   }
 
-  const tomorrowFajr = buildPrayerCandidate(tomorrowEntry, "fajr");
-  if (tomorrowFajr && tomorrowFajr.at.getTime() >= now.getTime()) {
-    return {
-      ...tomorrowFajr,
-      status: "upcoming-tomorrow",
-      dayOffset: 1,
-    };
+  for (const prayerKey of countdownKeys) {
+    const candidate = buildPrayerCandidate(tomorrowEntry, prayerKey, mode);
+    if (candidate && candidate.at.getTime() >= now.getTime()) {
+      return {
+        ...candidate,
+        status: "upcoming-tomorrow",
+        dayOffset: 1,
+      };
+    }
   }
 
   return {
@@ -280,7 +386,7 @@ export function getNextPrayer(todayEntry, now = new Date(), tomorrowEntry = null
 
 export function getPrayerDisplayTime(entry, prayerKey) {
   const value = String(entry?.[prayerKey] ?? "").trim();
-  return isValidTimeString(value) ? value : "--:--";
+  return isValidTimeString(value) ? value : "—";
 }
 
 export function getCountdownPayload(targetDate, now = new Date()) {

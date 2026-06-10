@@ -6,7 +6,7 @@
     <title>Imam Ali Moskeen Admin</title>
     <meta
       name="description"
-      content="Admin page for managing prayer times, events, and theme settings for Imam Ali Moskeen display."
+      content="Admin panel for managing prayer times, events, and theme settings for Imam Ali Moskeen display."
     >
     <link rel="stylesheet" href="css/base.css">
     <link rel="stylesheet" href="css/themes.css">
@@ -17,88 +17,421 @@
       <header class="admin-header panel">
         <div class="admin-header-copy">
           <p class="admin-kicker">Imam Ali Moskeen</p>
-          <h1>Display Admin</h1>
+          <h1>لوحة التحكم / Admin panel</h1>
           <p class="admin-copy">
-            Update prayer times, events, and theme without editing code. This page saves data only in this browser on this device.
+            Update prayer times, events and theme for the mosque display.
           </p>
           <p class="admin-copy admin-copy-secondary">
-            For shared updates across several screens later, a real online database such as Supabase is needed.
+            When Supabase is connected, prayer-time and event changes can sync to deployed mosque screens.
+            If Supabase is unavailable, the admin page falls back to this browser only.
           </p>
         </div>
-        <div class="admin-actions">
-          <a class="button-link" href="index.html" target="_blank" rel="noopener">Open Display Preview</a>
-          <button type="button" id="load-sample-data">Load Sample Data</button>
-          <button type="button" class="button-danger" id="clear-local-data">Clear Saved Data</button>
+        <div class="admin-header-actions">
+          <a class="button-link" href="index.html" target="_blank" rel="noopener">Open display page</a>
+          <button type="button" id="load-sample-data">Load sample data</button>
           <span id="admin-theme-badge" class="info-pill">Teal</span>
         </div>
       </header>
 
       <p id="admin-general-status" class="status-line admin-general-status">
-        Ready. Validate each JSON box before saving.
+        Ready. Upload a timetable image or paste timetable text, then review the preview before saving.
       </p>
 
-      <section class="admin-grid">
-        <article class="panel admin-panel editor-panel">
-          <div class="admin-panel-heading">
-            <div>
-              <h2>Prayer Times JSON</h2>
-              <p class="admin-helper">
-                Danish/Arabic context: bønnetider / <span class="arabic">مواقيت الصلاة</span>
-              </p>
-              <p>
-                Required fields in every object: <code>date</code>, <code>fajr</code>, <code>sunrise</code>,
-                <code>dhuhr</code>, <code>asr</code>, <code>maghrib</code>, <code>isha</code>.
-                <code>hijriDateArabic</code> and <code>hijriDateLatin</code> are optional.
-              </p>
-            </div>
-            <div class="button-row admin-panel-actions">
-              <button type="button" id="validate-prayer-times">Validate Prayer Times</button>
-              <button type="button" class="button-accent" id="save-prayer-times">Save Prayer Times</button>
-            </div>
-          </div>
-          <label class="admin-label" for="prayer-times-input">
-            Prayer Times JSON / <span class="arabic">مواقيت الصلاة</span>
-          </label>
-          <textarea
-            id="prayer-times-input"
-            class="json-textarea"
-            spellcheck="false"
-            placeholder='[{"date":"2026-06-10","fajr":"02:28","sunrise":"04:27","dhuhr":"13:09","asr":"17:40","maghrib":"21:52","isha":"23:44"}]'
-          ></textarea>
-          <p id="prayer-times-status" class="status-line">No prayer-time validation run yet.</p>
+      <section class="admin-status-grid" aria-label="Quick status">
+        <article class="status-card panel">
+          <p class="status-card-label">Current theme</p>
+          <p id="status-current-theme" class="status-card-value">Teal</p>
         </article>
-
-        <article class="panel admin-panel editor-panel">
-          <div class="admin-panel-heading">
-            <div>
-              <h2>Events JSON</h2>
-              <p class="admin-helper">
-                Danish/Arabic context: begivenheder / <span class="arabic">الفعاليات</span>
-              </p>
-              <p>
-                Required fields in every object: <code>id</code>, <code>titleArabic</code>, <code>titleDanish</code>,
-                <code>date</code>, <code>time</code>, <code>active</code>. Location, description, and <code>theme</code>
-                are optional.
-              </p>
-            </div>
-            <div class="button-row admin-panel-actions">
-              <button type="button" id="validate-events">Validate Events</button>
-              <button type="button" class="button-accent" id="save-events">Save Events</button>
-            </div>
-          </div>
-          <label class="admin-label" for="events-input">
-            Events JSON / <span class="arabic">الفعاليات</span>
-          </label>
-          <textarea
-            id="events-input"
-            class="json-textarea"
-            spellcheck="false"
-            placeholder='[{"id":"event-001","titleArabic":"صلاة الجمعة","titleDanish":"Fredagsbøn","date":"2026-06-12","time":"13:30","active":true}]'
-          ></textarea>
-          <p id="events-status" class="status-line">No event validation run yet.</p>
+        <article class="status-card panel">
+          <p class="status-card-label">Prayer-time days saved</p>
+          <p id="status-prayer-count" class="status-card-value">0</p>
         </article>
+        <article class="status-card panel">
+          <p class="status-card-label">First saved date</p>
+          <p id="status-prayer-first-date" class="status-card-value">—</p>
+        </article>
+        <article class="status-card panel">
+          <p class="status-card-label">Last saved date</p>
+          <p id="status-prayer-last-date" class="status-card-value">—</p>
+        </article>
+        <article class="status-card panel">
+          <p class="status-card-label">Events saved</p>
+          <p id="status-event-count" class="status-card-value">0</p>
+        </article>
+        <article class="status-card panel">
+          <p class="status-card-label">Display data source</p>
+          <p id="status-data-source" class="status-card-value">Sample data</p>
+        </article>
+      </section>
 
-        <aside class="admin-sidebar">
+      <section class="admin-workspace">
+        <div class="admin-column admin-primary">
+          <article class="panel admin-panel prayer-import-panel">
+            <div class="admin-panel-heading">
+              <div>
+                <h2>Prayer times import</h2>
+                <p class="admin-helper">
+                  Upload a monthly timetable image first, or paste timetable text as a fallback.
+                </p>
+              </div>
+            </div>
+
+            <div class="panel-note panel-note-warning">
+              OCR may make mistakes. Please review all times before saving.
+            </div>
+
+            <div class="import-settings">
+              <label class="admin-field">
+                <span class="admin-label">Month / Måned</span>
+                <select id="import-month"></select>
+              </label>
+              <label class="admin-field">
+                <span class="admin-label">Year / År</span>
+                <input id="import-year" type="number" inputmode="numeric" min="2020" max="2100" step="1">
+              </label>
+            </div>
+
+            <div class="import-methods">
+              <section class="import-method import-method-primary">
+                <div class="import-method-heading">
+                  <h3>Upload timetable image</h3>
+                  <p>Primary method for mosque staff.</p>
+                </div>
+                <label class="upload-dropzone" for="timetable-image-input">
+                  <input id="timetable-image-input" type="file" accept="image/*">
+                  <span class="upload-dropzone-title">Choose image</span>
+                  <span class="upload-dropzone-copy">
+                    Upload a monthly timetable image, then review the OCR text below.
+                  </span>
+                </label>
+                <div class="button-row">
+                  <button type="button" id="run-ocr-button" disabled>Run OCR again</button>
+                  <button type="button" id="use-sample-import-text">Load sample timetable text</button>
+                </div>
+                <p id="image-import-status" class="status-line">
+                  No image uploaded yet.
+                </p>
+                <figure id="image-preview-panel" class="image-preview-panel" hidden>
+                  <img id="timetable-image-preview" alt="Uploaded timetable preview">
+                  <figcaption>Preview the uploaded timetable before OCR.</figcaption>
+                </figure>
+              </section>
+
+              <section class="import-method import-method-secondary">
+                <div class="import-method-heading">
+                  <h3>Paste CSV/table text</h3>
+                  <p>Use this if OCR is unavailable, or to correct extracted text before parsing.</p>
+                </div>
+                <label class="admin-label" for="import-text-input">
+                  OCR text / timetable text
+                </label>
+                <textarea
+                  id="import-text-input"
+                  class="json-textarea import-textarea"
+                  spellcheck="false"
+                  placeholder="Paste timetable text here, for example: fredag 3 01:44 04:32 13:14 21:55 22:35 23:50"
+                ></textarea>
+                <div class="button-row">
+                  <button type="button" class="button-accent" id="parse-timetable">Parse timetable</button>
+                </div>
+                <p id="parse-status" class="status-line">
+                  Paste or extract timetable text, then click Parse timetable.
+                </p>
+                <div id="parse-skipped-container" class="parse-skipped" hidden>
+                  <p class="admin-label">Lines that need manual attention</p>
+                  <ul id="parse-skipped-lines" class="parse-skipped-list"></ul>
+                </div>
+              </section>
+            </div>
+          </article>
+
+          <article class="panel admin-panel prayer-manual-panel">
+            <div class="admin-panel-heading">
+              <div>
+                <h2>Manual prayer JSON fallback</h2>
+                <p class="admin-helper">
+                  Hidden by default so normal staff can focus on the simpler import flow.
+                </p>
+              </div>
+            </div>
+
+            <button type="button" id="toggle-manual-entry" class="button-secondary">
+              إدخال البيانات يدوياً / Enter data manually
+            </button>
+
+            <section id="manual-json-section" class="manual-json-section" hidden>
+              <div class="panel-note">
+                <p class="panel-note-title">
+                  Advanced option: use this only if you want to paste prayer times as JSON manually.
+                </p>
+                <p class="panel-note-copy arabic">
+                  خيار متقدم: استخدم هذا فقط إذا كنت تريد إدخال مواقيت الصلاة بصيغة JSON يدوياً.
+                </p>
+              </div>
+              <div class="admin-panel-heading compact-heading">
+                <div>
+                  <h3>Prayer times JSON</h3>
+                  <p>
+                    Accepted formats:
+                    <code>standard</code> with <code>asr</code> and <code>isha</code>,
+                    or <code>imamAliCopenhagen</code> with <code>sunset</code> and <code>midnight</code>.
+                  </p>
+                </div>
+                <div class="button-row admin-panel-actions">
+                  <button type="button" id="validate-prayer-times">Validate prayer times</button>
+                  <button type="button" class="button-accent" id="save-prayer-times">Save prayer times</button>
+                </div>
+              </div>
+              <label class="admin-label" for="prayer-times-input">
+                Prayer Times JSON / <span class="arabic">مواقيت الصلاة</span>
+              </label>
+              <textarea
+                id="prayer-times-input"
+                class="json-textarea"
+                spellcheck="false"
+                placeholder='[{"date":"2026-07-03","fajr":"01:44","sunrise":"04:32","dhuhr":"13:14","sunset":"21:55","maghrib":"22:35","midnight":"23:50"}]'
+              ></textarea>
+              <p id="prayer-times-status" class="status-line">Manual prayer-time JSON has not been validated yet.</p>
+            </section>
+          </article>
+
+          <article class="panel admin-panel events-panel">
+            <div class="admin-panel-heading">
+              <div>
+                <h2>Events</h2>
+                <p class="admin-helper">
+                  Add, edit, and manage events with a simple form. The display shows the nearest active event first.
+                </p>
+              </div>
+            </div>
+            <form id="event-form" class="event-form" novalidate>
+              <div class="event-form-grid">
+                <section class="event-media-editor">
+                  <div id="event-image-preview-shell" class="event-image-preview-shell" data-theme="normal" data-has-image="false">
+                    <img id="event-image-preview" alt="Event preview image" hidden>
+                    <div id="event-image-placeholder" class="event-image-placeholder">
+                      <span id="event-image-placeholder-symbol" class="event-image-placeholder-symbol">N</span>
+                      <span id="event-image-placeholder-ar" class="arabic">فعالية المسجد</span>
+                      <span id="event-image-placeholder-da" class="latin">Moské-arrangement</span>
+                    </div>
+                  </div>
+                  <label class="admin-field" for="event-image-input">
+                    <span class="admin-label">Event image / <span class="arabic">صورة الفعالية</span></span>
+                    <input id="event-image-input" type="file" accept="image/png,image/jpeg,image/webp">
+                  </label>
+                  <p class="admin-helper">
+                    Upload a poster or event image. Recommended ratio: 16:9 for landscape screens or 4:5 for portrait screens.
+                  </p>
+                  <p id="event-image-status" class="status-line">
+                    No image selected. A clean placeholder will be used if you save without an image.
+                  </p>
+                </section>
+
+                <div class="event-form-fields">
+                  <input id="event-id" type="hidden">
+
+                  <div class="event-form-columns">
+                    <label class="admin-field">
+                      <span class="admin-label">Arabic name / <span class="arabic">اسم الفعالية بالعربية</span></span>
+                      <input
+                        id="event-title-arabic"
+                        name="titleArabic"
+                        type="text"
+                        required
+                        placeholder="مثال: مجلس دعاء كميل"
+                      >
+                    </label>
+
+                    <label class="admin-field">
+                      <span class="admin-label">Danish name</span>
+                      <input
+                        id="event-title-danish"
+                        name="titleDanish"
+                        type="text"
+                        required
+                        placeholder="Eksempel: Dua Kumayl-program"
+                      >
+                    </label>
+
+                    <label class="admin-field">
+                      <span class="admin-label">Date / <span class="arabic">التاريخ</span></span>
+                      <input id="event-date" name="date" type="date" required>
+                    </label>
+
+                    <label class="admin-field">
+                      <span class="admin-label">Time / <span class="arabic">الوقت</span></span>
+                      <input id="event-time" name="time" type="time" required>
+                    </label>
+
+                    <label class="admin-field">
+                      <span class="admin-label">Arabic location / <span class="arabic">المكان بالعربية</span></span>
+                      <input
+                        id="event-location-arabic"
+                        name="locationArabic"
+                        type="text"
+                        placeholder="مثال: الجامع الرئيسي"
+                      >
+                    </label>
+
+                    <label class="admin-field">
+                      <span class="admin-label">Danish location</span>
+                      <input
+                        id="event-location-danish"
+                        name="locationDanish"
+                        type="text"
+                        placeholder="Eksempel: Hovedmoskeen"
+                      >
+                    </label>
+                  </div>
+
+                  <div class="event-form-columns event-form-columns-wide">
+                    <label class="admin-field">
+                      <span class="admin-label">Arabic description / <span class="arabic">الوصف بالعربية</span></span>
+                      <textarea
+                        id="event-description-arabic"
+                        name="descriptionArabic"
+                        class="event-textarea"
+                        placeholder="وصف مختصر للفعالية"
+                      ></textarea>
+                    </label>
+
+                    <label class="admin-field">
+                      <span class="admin-label">Danish description</span>
+                      <textarea
+                        id="event-description-danish"
+                        name="descriptionDanish"
+                        class="event-textarea"
+                        placeholder="Kort beskrivelse af arrangementet"
+                      ></textarea>
+                    </label>
+                  </div>
+
+                  <div class="event-form-columns">
+                    <label class="admin-field">
+                      <span class="admin-label">Theme / category</span>
+                      <select id="event-theme" name="theme">
+                        <option value="normal">Normal</option>
+                        <option value="muharram">Muharram</option>
+                        <option value="ramadan">Ramadan</option>
+                        <option value="eid">Eid</option>
+                        <option value="majlis">Majlis</option>
+                        <option value="friday">Friday prayer</option>
+                      </select>
+                    </label>
+
+                    <label class="event-checkbox">
+                      <input id="event-active" name="active" type="checkbox" checked>
+                      <span>Show this event on the display</span>
+                    </label>
+                  </div>
+
+                  <ul id="event-form-errors" class="form-error-list" hidden></ul>
+
+                  <div class="button-row">
+                    <button type="submit" class="button-accent" id="event-submit-button">
+                      Save event / حفظ الفعالية
+                    </button>
+                    <button type="button" id="event-cancel-edit" class="button-secondary" hidden>
+                      Cancel edit
+                    </button>
+                  </div>
+                  <p id="event-form-status" class="status-line">
+                    Fill in the event details, then save. The list below updates after each change.
+                  </p>
+                </div>
+              </div>
+            </form>
+
+            <section class="saved-events-section">
+              <div class="admin-panel-heading compact-heading">
+                <div>
+                  <h3>Saved events</h3>
+                  <p class="admin-helper">
+                    Edit, duplicate, hide, or delete an event without touching JSON.
+                  </p>
+                </div>
+                <span id="event-data-source" class="info-pill">Sample data</span>
+              </div>
+              <div id="saved-events-list" class="saved-events-list">
+                <div class="saved-events-empty">
+                  No events are available yet.
+                </div>
+              </div>
+            </section>
+
+            <section class="event-json-fallback">
+              <button type="button" id="toggle-event-json-entry" class="button-secondary">
+                إدخال الفعاليات بصيغة JSON يدوياً / Enter event JSON manually
+              </button>
+
+              <section id="event-json-section" class="manual-json-section" hidden>
+                <div class="panel-note">
+                  <p class="panel-note-title">
+                    Advanced option: use this only if you want to paste events as JSON manually.
+                  </p>
+                  <p class="panel-note-copy arabic">
+                    خيار متقدم: استخدم هذا فقط إذا كنت تريد إدخال الفعاليات بصيغة JSON يدوياً.
+                  </p>
+                </div>
+                <div class="admin-panel-heading compact-heading">
+                  <div>
+                    <h3>Events JSON</h3>
+                    <p>Keep this as a backup option for advanced admins and developers.</p>
+                  </div>
+                  <div class="button-row admin-panel-actions">
+                    <button type="button" id="validate-events">Validate events</button>
+                    <button type="button" class="button-accent" id="save-events">Save events</button>
+                  </div>
+                </div>
+                <label class="admin-label" for="events-input">
+                  Events JSON / <span class="arabic">الفعاليات</span>
+                </label>
+                <textarea
+                  id="events-input"
+                  class="json-textarea events-textarea"
+                  spellcheck="false"
+                  placeholder='[{"id":"event-001","titleArabic":"صلاة الجمعة","titleDanish":"Fredagsbøn","date":"2026-06-12","time":"13:30","active":true}]'
+                ></textarea>
+                <p id="events-status" class="status-line">Event JSON has not been validated yet.</p>
+              </section>
+            </section>
+          </article>
+        </div>
+
+        <aside class="admin-column admin-secondary">
+          <article class="panel admin-panel preview-panel">
+            <div class="admin-panel-heading">
+              <div>
+                <h2>Preview parsed timetable</h2>
+                <p class="admin-helper">
+                  Review every row before saving. Save stays disabled until all highlighted errors are fixed.
+                </p>
+              </div>
+            </div>
+            <div class="preview-summary">
+              <p id="preview-summary" class="preview-summary-line">
+                No timetable parsed yet.
+              </p>
+              <p id="preview-errors" class="preview-summary-line preview-summary-errors">
+                Parse a timetable to see validation details here.
+              </p>
+            </div>
+            <div id="preview-table-container" class="preview-table-container" tabindex="0">
+              <div class="preview-empty-state">
+                Upload a timetable image or paste timetable text to build the editable preview table.
+              </div>
+            </div>
+            <div class="button-row">
+              <button type="button" class="button-accent" id="save-imported-prayer-times" disabled>
+                Save imported prayer times
+              </button>
+              <button type="button" id="refresh-preview">Refresh status</button>
+            </div>
+            <p id="import-save-status" class="status-line">
+              Imported prayer times are not saved yet.
+            </p>
+          </article>
+
           <article class="panel admin-panel">
             <div class="admin-panel-heading">
               <div>
@@ -111,20 +444,20 @@
               <label class="theme-option">
                 <input type="radio" name="theme" value="teal">
                 <span>
-                  <strong>Teal</strong>
+                  <strong>Teal normal theme</strong>
                   <small>Daily teal theme / <span class="arabic">الثيم اليومي</span></small>
                 </span>
               </label>
               <label class="theme-option">
                 <input type="radio" name="theme" value="muharram">
                 <span>
-                  <strong>Muharram</strong>
+                  <strong>Muharram red theme</strong>
                   <small>Black and red / <span class="arabic">محرم</span></small>
                 </span>
               </label>
             </fieldset>
             <div class="button-row">
-              <button type="button" class="button-accent" id="save-theme">Save Theme</button>
+              <button type="button" class="button-accent" id="save-theme">Save theme</button>
             </div>
             <p id="theme-status" class="status-line">Theme not changed in this session.</p>
           </article>
@@ -132,57 +465,52 @@
           <article class="panel admin-panel">
             <div class="admin-panel-heading">
               <div>
-                <h2>Saved Data Status</h2>
-                <p>What the display can read from this browser right now.</p>
-              </div>
-            </div>
-            <dl class="status-list">
-              <div class="status-item">
-                <dt>Prayer-time days</dt>
-                <dd id="status-prayer-count">0</dd>
-              </div>
-              <div class="status-item">
-                <dt>First date</dt>
-                <dd id="status-prayer-first-date">—</dd>
-              </div>
-              <div class="status-item">
-                <dt>Last date</dt>
-                <dd id="status-prayer-last-date">—</dd>
-              </div>
-              <div class="status-item">
-                <dt>Saved events</dt>
-                <dd id="status-event-count">0</dd>
-              </div>
-              <div class="status-item">
-                <dt>Current theme</dt>
-                <dd id="status-current-theme">Teal</dd>
-              </div>
-            </dl>
-            <div class="button-row">
-              <button type="button" id="refresh-preview">Refresh Status</button>
-            </div>
-            <p id="status-panel-note" class="status-line">
-              If nothing is saved here, the display falls back to bundled sample data.
-            </p>
-          </article>
-
-          <article class="panel admin-panel">
-            <div class="admin-panel-heading">
-              <div>
-                <h2>Important Note</h2>
-                <p>Local browser storage only.</p>
+                <h2>Help</h2>
+                <p>What mosque staff should remember during import.</p>
               </div>
             </div>
             <ul class="note-list">
-              <li>Saved data stays only on this device and this browser profile.</li>
-              <li>Another screen or another browser will not receive updates automatically.</li>
-              <li>For real multi-screen sync later, connect the project to Supabase or another database.</li>
+              <li>Upload the timetable image, wait for OCR, then correct the extracted text if needed.</li>
+              <li>Check the preview table against the original image before saving.</li>
+              <li>Data is saved only on this browser and this device.</li>
+              <li>If no local data exists, the display falls back to bundled sample data.</li>
             </ul>
+            <p id="status-panel-note" class="status-line">
+              The display page tries Supabase through Netlify Functions first, then local browser data, then sample fallback data.
+            </p>
+          </article>
+
+          <article class="panel admin-panel danger-panel">
+            <div class="admin-panel-heading">
+              <div>
+                <h2>Danger zone</h2>
+                <p>Remove saved browser data without editing code.</p>
+              </div>
+            </div>
+            <div class="danger-grid">
+              <button type="button" id="clear-prayer-times" class="button-danger">Clear saved prayer times</button>
+              <button type="button" id="clear-events" class="button-danger">Clear saved events</button>
+              <button type="button" id="clear-local-data" class="button-danger">Reset all local data</button>
+            </div>
+            <p id="danger-status" class="status-line">
+              Use these actions carefully. Clearing local data restores sample fallback behavior.
+            </p>
           </article>
         </aside>
       </section>
     </main>
 
-    <script type="module" src="js/admin.js"></script>
+    <script>
+      (function loadAdminRuntime() {
+        var script = document.createElement("script");
+        if (window.location.protocol === "file:") {
+          script.src = "js/admin-standalone.js";
+        } else {
+          script.type = "module";
+          script.src = "js/admin.js";
+        }
+        document.body.appendChild(script);
+      }());
+    </script>
   </body>
 </html>

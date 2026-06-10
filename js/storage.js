@@ -64,13 +64,39 @@ export function clearStoredDisplayData() {
     return false;
   }
 
-  const { prayerTimes, events, theme } = APP_CONFIG.storageKeys;
-  window.localStorage.removeItem(prayerTimes);
-  window.localStorage.removeItem(events);
-  window.localStorage.removeItem(theme);
+  clearStoredPrayerTimes();
+  clearStoredEvents();
+  clearStoredTheme();
   return true;
 }
 
 export function hasLocalStorageSupport() {
   return isStorageAvailable();
+}
+
+export function clearStoredPrayerTimes() {
+  if (!isStorageAvailable()) {
+    return false;
+  }
+
+  window.localStorage.removeItem(APP_CONFIG.storageKeys.prayerTimes);
+  return true;
+}
+
+export function clearStoredEvents() {
+  if (!isStorageAvailable()) {
+    return false;
+  }
+
+  window.localStorage.removeItem(APP_CONFIG.storageKeys.events);
+  return true;
+}
+
+export function clearStoredTheme() {
+  if (!isStorageAvailable()) {
+    return false;
+  }
+
+  window.localStorage.removeItem(APP_CONFIG.storageKeys.theme);
+  return true;
 }

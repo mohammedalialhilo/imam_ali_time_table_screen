@@ -560,13 +560,97 @@
   display: grid;
   grid-template-columns: minmax(4rem, 4.85rem) minmax(0, 1fr);
   grid-template-areas:
-    "date body"
-    "date meta";
+    "date media"
+    "body body"
+    "meta meta";
   gap: clamp(0.45rem, 0.65vw, 0.75rem);
 }
 
 .event-date-pill {
   grid-area: date;
+}
+
+.event-media {
+  --event-media-rgb: var(--accent-rgb);
+  grid-area: media;
+  position: relative;
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid rgb(var(--event-media-rgb) / 0.2);
+  background:
+    linear-gradient(180deg, rgb(var(--event-media-rgb) / 0.14), rgb(255 255 255 / 0.03)),
+    rgb(255 255 255 / 0.02);
+  box-shadow: inset 0 0 0 1px rgb(var(--event-media-rgb) / 0.08);
+  width: 100%;
+  height: clamp(5.5rem, 13svh, 8.75rem);
+  align-self: start;
+}
+
+.event-media[data-event-category="muharram"] {
+  --event-media-rgb: 227 60 60;
+}
+
+.event-media[data-event-category="ramadan"] {
+  --event-media-rgb: 87 201 127;
+}
+
+.event-media[data-event-category="eid"] {
+  --event-media-rgb: 248 189 66;
+}
+
+.event-media[data-event-category="majlis"] {
+  --event-media-rgb: 171 124 255;
+}
+
+.event-media[data-event-category="friday"] {
+  --event-media-rgb: 67 218 230;
+}
+
+.event-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.event-image-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 0.35rem;
+  text-align: center;
+  padding: 0.7rem;
+  background:
+    radial-gradient(circle at 22% 18%, rgb(var(--event-media-rgb) / 0.18), transparent 30%),
+    linear-gradient(155deg, rgb(var(--event-media-rgb) / 0.12), transparent 62%);
+}
+
+.event-image-symbol {
+  width: clamp(2rem, min(4vw, 3svh), 2.65rem);
+  height: clamp(2rem, min(4vw, 3svh), 2.65rem);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgb(var(--event-media-rgb) / 0.34);
+  background: rgb(var(--event-media-rgb) / 0.12);
+  color: rgb(var(--event-media-rgb));
+  font-size: clamp(0.9rem, min(1.8vw, 1.35svh), 1.1rem);
+  font-weight: 700;
+}
+
+.event-image-label {
+  margin: 0;
+  line-height: 1.25;
+}
+
+.event-image-label.arabic {
+  font-size: clamp(0.88rem, min(1.55vw, 1.15svh), 1rem);
+}
+
+.event-image-label.latin {
+  font-size: clamp(0.68rem, min(1.1vw, 0.88svh), 0.82rem);
+  color: var(--text-muted);
 }
 
 .event-hijri-short {
@@ -589,8 +673,19 @@
   gap: 0.4rem;
 }
 
-.event-description {
+.event-panel.is-empty .event-meta-list {
   display: none;
+}
+
+.event-panel.has-description .event-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.event-panel.is-empty .event-body {
+  align-content: center;
 }
 
 .event-meta-item {
@@ -657,6 +752,7 @@
   .event-layout {
     grid-template-areas:
       "date"
+      "media"
       "body"
       "meta";
   }
@@ -805,8 +901,8 @@
   }
 
   .event-layout {
-    grid-template-columns: minmax(5.3rem, 6.2rem) minmax(0, 1.55fr) minmax(13rem, 1fr);
-    grid-template-areas: "date body meta";
+    grid-template-columns: minmax(5.3rem, 6.2rem) minmax(0, 1.45fr) minmax(13rem, 1fr) minmax(11rem, 0.9fr);
+    grid-template-areas: "date body meta media";
     align-items: stretch;
   }
 
@@ -825,6 +921,12 @@
   .event-meta-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: center;
+  }
+
+  .event-media {
+    height: auto;
+    min-height: 100%;
+    max-height: none;
   }
 
   .event-meta-item {
@@ -1198,8 +1300,8 @@
   }
 
   .event-layout {
-    grid-template-columns: minmax(3.2rem, 3.75rem) minmax(0, 1fr) minmax(9rem, 0.85fr);
-    grid-template-areas: "date body meta";
+    grid-template-columns: minmax(3.2rem, 3.75rem) minmax(0, 1fr) minmax(9rem, 0.85fr) minmax(7rem, 0.7fr);
+    grid-template-areas: "date body meta media";
     align-items: center;
     gap: 0.3rem;
   }

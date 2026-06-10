@@ -1,39 +1,32 @@
-# DEVELOPER MANUAL
+# DEVELOPER_MANUAL.md
 
 ## Project overview
 
-`imam-ali-moskeen-display` is a plain HTML, CSS, and JavaScript digital signage project for mosque screens.
+`imam-ali-moskeen-display` is a static digital signage app for Imam Ali Moskeen in Copenhagen.
 
-It is designed to:
+It has two main pages:
 
-- show prayer times for the current day
-- calculate and highlight the next prayer
-- show a live countdown to the next prayer
-- show Gregorian and Hijri date text
-- show the nearest active upcoming event
-- support a normal teal theme and a Muharram red theme
-- work directly from static files without a build step
-- run on Netlify with simple serverless function fallbacks
+- `index.html`: public display
+- `admin.html`: admin panel
 
-The project has two user-facing pages:
+The project is designed for:
 
-- `index.html`: the display screen
-- `admin.html`: the local admin interface
+- no frontend build step
+- plain HTML, CSS, and JavaScript
+- Netlify deployment
+- direct `file://` opening
+- Supabase-backed shared prayer times and events through Netlify Functions
 
 ## Tech stack
 
-- Plain HTML
-- Plain CSS
-- Plain JavaScript ES modules
-- `localStorage` for the current admin/data store
-- Netlify Functions for simple JSON endpoints
-
-Not used:
-
-- React
-- TypeScript
-- bundlers
-- package-based build tooling
+- plain HTML
+- plain CSS
+- plain JavaScript ES modules
+- checked-in standalone JS bundles for `file://` mode
+- Netlify Functions with CommonJS
+- Supabase via `@supabase/supabase-js`
+- optional Tesseract.js on `admin.html` only
+- `localStorage` fallback for browser-local persistence
 
 ## File structure
 
@@ -44,421 +37,539 @@ imam-ali-moskeen-display/
 ├── README.md
 ├── USER_ADMIN_MANUAL.md
 ├── DEVELOPER_MANUAL.md
+├── package.json
+├── .env.example
+├── .gitignore
 ├── netlify.toml
 ├── assets/
 │   ├── logo-red.png
 │   ├── logo-teal.png
 │   └── README_ASSETS.md
 ├── css/
-│   ├── admin.css
 │   ├── base.css
 │   ├── display.css
+│   ├── admin.css
 │   └── themes.css
 ├── data/
-│   ├── events.sample.json
-│   └── prayer-times.sample.json
+│   ├── prayer-times.sample.json
+│   └── events.sample.json
 ├── js/
 │   ├── admin.js
+│   ├── admin-standalone.js
 │   ├── clock.js
 │   ├── config.js
 │   ├── display.js
+│   ├── display-standalone.js
 │   ├── events.js
+│   ├── import-prayer-image.js
 │   ├── prayer-times.js
+│   ├── remote-data.js
 │   └── storage.js
 └── netlify/
     └── functions/
+        ├── _shared.js
+        ├── _supabase.js
+        ├── delete-event.js
+        ├── get-today-prayer-times.js
+        ├── get-upcoming-event.js
+        ├── save-event.js
+        ├── save-prayer-times.js
         ├── today-prayer-times.js
         └── upcoming-event.js
 ```
 
-## Major files and responsibilities
+## Major files
 
-### Root files
+### `index.html`
 
-- `index.html`
-  - display markup
-  - DOM targets for clock, prayer list, next prayer, and event panel
-- `admin.html`
-  - non-technical admin UI
-  - prayer/events JSON editors
-  - theme controls
-  - saved-data status panel
-- `README.md`
-  - project summary and startup instructions
-- `USER_ADMIN_MANUAL.md`
-  - instructions for mosque staff
-- `DEVELOPER_MANUAL.md`
-  - this document
-- `netlify.toml`
-  - Netlify publish/functions config
-  - API redirects
+Public display markup. It loads the ES module runtime on `http/https` and the standalone bundle on `file://`.
 
-### CSS
+### `admin.html`
 
-- `css/base.css`
-  - reset
-  - shared panel/button/form styles
-  - dark background and shared utility classes
-- `css/themes.css`
-  - theme variables for `[data-theme="teal"]` and `[data-theme="muharram"]`
-- `css/display.css`
-  - portrait-first display layout
-  - landscape media queries
-  - prayer/event/clock panel layout
-- `css/admin.css`
-  - admin dashboard layout
-  - JSON editor sizing
-  - saved-data status panel
+Admin markup. Prayer import is image-first. Event management is form-first. Advanced JSON remains hidden by default.
 
-### JavaScript
+### `js/config.js`
 
-- `js/config.js`
-  - app constants
-  - theme metadata
-  - storage keys
-  - prayer metadata
-  - sample inline fallback data
-  - fallback UI messages
-- `js/storage.js`
-  - all `localStorage` reads/writes
-  - clear/reset helpers
-  - storage support detection
-- `js/clock.js`
-  - local browser date/time formatting
-  - clock tick interval
-- `js/prayer-times.js`
-  - prayer JSON validation
-  - tolerant display-side prayer loading
-  - exact local-date matching
-  - next-prayer calculation
-  - countdown formatting
-- `js/events.js`
-  - event validation
-  - event loading
-  - nearest active upcoming-event selection
-- `js/display.js`
-  - main display bootstrap
-  - theme application
-  - DOM rendering
-  - countdown updates
-  - midnight reload behavior
-- `js/admin.js`
-  - editor validation
-  - saving to `localStorage`
-  - theme selection/save
-  - saved-data status refresh
+Central configuration:
 
-### Data and serverless
+- themes
+- storage keys
+- prayer display mode
+- event categories
+- sample file paths
+- Netlify Function paths
+- admin sync status messages
+- inline sample data
 
-- `data/prayer-times.sample.json`
-  - static fallback prayer dataset
-- `data/events.sample.json`
-  - static fallback event dataset
-- `netlify/functions/today-prayer-times.js`
-  - returns the requested day prayer entry and, when available, the next day entry
-- `netlify/functions/upcoming-event.js`
-  - returns the nearest active upcoming event from sample data
+### `js/storage.js`
+
+Thin `localStorage` wrapper for prayer times, events, and theme.
+
+### `js/remote-data.js`
+
+Frontend helper for Netlify Function calls:
+
+- connection check
+- remote prayer-time reads
+- remote event reads
+- remote prayer-time writes
+- remote event saves
+- remote event deletes
+
+This module never uses Supabase keys directly.
+
+### `js/prayer-times.js`
+
+Prayer-time validation and loading logic:
+
+- normalize prayer entries
+- validate flexible schemas
+- compute today/tomorrow rows
+- compute next prayer
+- countdown helpers
+- load order: Supabase function -> localStorage -> sample JSON -> inline sample
+
+### `js/events.js`
+
+Event normalization, validation, CRUD helpers, and loading logic:
+
+- category normalization
+- backward compatibility for legacy theme values
+- next-upcoming event selection
+- load order: Supabase function -> localStorage -> sample JSON -> inline sample
+
+### `js/import-prayer-image.js`
+
+Prayer-timetable parser:
+
+- OCR text cleanup
+- Danish timetable parsing
+- preview-row generation
+- validation
+- conversion into prayer entries
+
+### `js/display.js`
+
+Display runtime:
+
+- theme load
+- prayer/event data load
+- render clock, dates, next prayer, prayer list, and event
+- refresh countdown every second
+- refresh remote prayer/event data every minute
+- reload shortly after midnight
+
+### `js/admin.js`
+
+Admin runtime:
+
+- status cards
+- prayer OCR/text import
+- preview table editing
+- manual prayer JSON fallback
+- event form
+- saved-event list actions
+- manual event JSON fallback
+- local fallback saves
+- Supabase sync status
+
+### `netlify/functions/_supabase.js`
+
+Shared Supabase client factory for Netlify Functions.
+
+Exports:
+
+- `createSupabaseAnonClient()`
+- `createSupabaseAdminClient()`
+
+### `netlify/functions/_shared.js`
+
+Shared function-side helpers:
+
+- JSON responses
+- Copenhagen date/time helpers
+- request-body parsing
+- prayer-time normalization/validation
+- event normalization/validation
+- camelCase <-> snake_case mapping
+
+### Compatibility wrappers
+
+- `today-prayer-times.js`
+- `upcoming-event.js`
+
+These keep older `/api/...` redirects working by delegating to the newer Supabase-backed read functions.
+
+## Required Netlify environment variables
+
+Add these in Netlify:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+Netlify path:
+
+`Site settings -> Environment variables`
+
+Use `.env.example` for placeholder names only.
+
+## Security rules
+
+### Never expose the service role key
+
+`SUPABASE_SERVICE_ROLE_KEY` must never appear in:
+
+- frontend JavaScript
+- HTML
+- CSS
+- committed config files
+- client-side network calls
+
+Only Netlify Functions may use it.
+
+### Frontend safety boundary
+
+Frontend code only talks to:
+
+- `/.netlify/functions/get-today-prayer-times`
+- `/.netlify/functions/get-upcoming-event`
+- `/.netlify/functions/save-prayer-times`
+- `/.netlify/functions/save-event`
+- `/.netlify/functions/delete-event`
+
+No frontend file imports `@supabase/supabase-js`.
+
+## Supabase client architecture
+
+### Read client
+
+`createSupabaseAnonClient()` uses:
+
+- `process.env.SUPABASE_URL`
+- `process.env.SUPABASE_ANON_KEY`
+
+Used for:
+
+- `get-today-prayer-times.js`
+- `get-upcoming-event.js`
+
+### Admin client
+
+`createSupabaseAdminClient()` uses:
+
+- `process.env.SUPABASE_URL`
+- `process.env.SUPABASE_SERVICE_ROLE_KEY`
+
+Used for:
+
+- `save-prayer-times.js`
+- `save-event.js`
+- `delete-event.js`
+
+## Netlify Functions architecture
+
+### `get-today-prayer-times.js`
+
+Reads from Supabase table:
+
+- `prayer_times`
+
+Expected columns:
+
+- `date`
+- `hijri_date_arabic`
+- `hijri_date_latin`
+- `fajr`
+- `sunrise`
+- `dhuhr`
+- `asr`
+- `sunset`
+- `maghrib`
+- `isha`
+- `midnight`
+
+Behavior:
+
+- accepts optional `?date=YYYY-MM-DD`
+- returns today plus tomorrow when available
+- returns `404` when today's row is missing
+- returns JSON without crashing on failure
+
+### `get-upcoming-event.js`
+
+Reads from Supabase table:
+
+- `events`
+
+Expected columns:
+
+- `id`
+- `title_arabic`
+- `title_danish`
+- `event_date`
+- `event_time`
+- `location_arabic`
+- `location_danish`
+- `description_arabic`
+- `description_danish`
+- `image_data_url`
+- `theme`
+- `active`
+- `created_at`
+- `updated_at`
+
+Behavior:
+
+- reads active events
+- sorts by `event_date` and `event_time`
+- returns the next future event
+- falls back to the most recent past active event if needed
+- returns `upcomingEvent: null` when no event exists
+
+### `save-prayer-times.js`
+
+Behavior:
+
+- POST only
+- accepts an array or `{ items: [...] }`
+- validates input before writing
+- upserts into `prayer_times` on `date`
+- uses service role key only inside the function
+
+### `save-event.js`
+
+Behavior:
+
+- POST only
+- accepts camelCase or snake_case fields
+- validates required fields:
+  - `titleArabic` / `title_arabic`
+  - `titleDanish` / `title_danish`
+  - `date` / `event_date`
+  - `time` / `event_time`
+- upserts on `id`
+
+### `delete-event.js`
+
+Behavior:
+
+- POST or DELETE
+- deletes by event ID only
+- does not delete unrelated rows
 
 ## Data flow
 
-## Display page flow
+### Display page
 
-1. `index.html` loads `js/display.js`
-2. `display.js` reads the saved theme from `localStorage`
-3. `display.js` calls `loadPrayerTimes()` and `loadEvents()`
-4. Prayer-time load priority:
-   1. `localStorage`
-   2. `data/prayer-times.sample.json`
-   3. `/api/today-prayer-times`
-   4. inline sample data from `config.js`
-5. Event load priority:
-   1. `localStorage`
-   2. `data/events.sample.json`
-   3. `/api/upcoming-event`
-   4. inline sample data from `config.js`
-6. Current day is matched by exact local browser date using `YYYY-MM-DD`
-7. The next prayer is calculated from local browser time
-8. The clock and countdown update every second
-9. If the day changes, the page reloads
-10. A scheduled reload is also set shortly after midnight
+1. load theme from `localStorage`
+2. load prayer times in this order:
+   - Supabase read function
+   - `localStorage`
+   - sample JSON
+   - inline sample
+3. load events in this order:
+   - Supabase read function
+   - `localStorage`
+   - sample JSON
+   - inline sample
+4. render display
+5. refresh countdown every second
+6. refresh remote data every minute
+7. reload after midnight
 
-## Admin page flow
+### Admin page
 
-1. `admin.html` loads `js/admin.js`
-2. The script reads saved prayer times, events, and theme from `localStorage`
-3. Editors are filled with saved data when valid
-4. If there is no saved valid data, editors show bundled sample data
-5. Validation happens before save
-6. Valid JSON is prettified in the textarea
-7. Only validated data is saved
-8. The saved-data status panel reads actual saved browser data, not fallback data
+1. load local prayer times, events, and theme for editing/fallback
+2. check whether Supabase read functions are reachable
+3. show connection status
+4. on save:
+   - attempt local save
+   - attempt remote Netlify Function save
+   - show success, local-only warning, or Supabase error
 
 ## Prayer-time data model
 
-Prayer times are stored as an array of daily objects.
-
-Example:
+Unified frontend shape:
 
 ```json
-[
-  {
-    "date": "2026-06-09",
-    "hijriDateArabic": "23 ذو الحجة 1447 هـ",
-    "hijriDateLatin": "23 Dhu al-Hijjah 1447 H",
-    "fajr": "02:29",
-    "sunrise": "04:28",
-    "dhuhr": "13:09",
-    "asr": "17:39",
-    "maghrib": "21:51",
-    "isha": "23:43"
-  }
-]
+{
+  "date": "2026-07-03",
+  "hijriDateArabic": "",
+  "hijriDateLatin": "",
+  "fajr": "01:44",
+  "sunrise": "04:32",
+  "dhuhr": "13:14",
+  "asr": "",
+  "sunset": "21:55",
+  "maghrib": "22:35",
+  "isha": "",
+  "midnight": "23:50"
+}
 ```
 
-### Required fields
+For Copenhagen mode, required fields are:
 
 - `date`
 - `fajr`
 - `sunrise`
 - `dhuhr`
-- `asr`
+- `sunset`
 - `maghrib`
-- `isha`
-
-### Optional fields
-
-- `hijriDateArabic`
-- `hijriDateLatin`
-
-### Validation rules
-
-- array only
-- `date` must be `YYYY-MM-DD`
-- prayer fields must be `HH:mm`
-
-### Runtime behavior
-
-- invalid or missing prayer times are shown as `--:--` in the display renderer
-- exact date matching is used for today and tomorrow
-- after the last prayer, tomorrow’s Fajr is used if tomorrow exists
+- `midnight`
 
 ## Event data model
 
-Events are stored as an array of objects.
-
-Example:
+Frontend shape:
 
 ```json
-[
-  {
-    "id": "event-001",
-    "titleArabic": "مجلس الليلة الأولى من محرم",
-    "titleDanish": "Majlis – første aften af Muharram",
-    "date": "2026-06-13",
-    "time": "19:30",
-    "locationArabic": "الجامع الرئيسي",
-    "locationDanish": "Hovedmoskeen",
-    "descriptionArabic": "ذكرى استشهاد الإمام الحسين عليه السلام",
-    "descriptionDanish": "Mindehøjtidelighed for Imam Hussein",
-    "theme": "muharram",
-    "active": true
-  }
-]
+{
+  "id": "event-001",
+  "titleArabic": "مجلس الليلة الأولى من محرم",
+  "titleDanish": "Majlis – første aften af Muharram",
+  "date": "2026-07-13",
+  "time": "19:30",
+  "locationArabic": "الجامع الرئيسي",
+  "locationDanish": "Hovedmoskeen",
+  "descriptionArabic": "ذكرى استشهاد الإمام الحسين عليه السلام",
+  "descriptionDanish": "Mindehøjtidelighed for Imam Hussein",
+  "imageDataUrl": "data:image/webp;base64,...",
+  "theme": "muharram",
+  "active": true,
+  "createdAt": "2026-06-10T10:30:00.000Z",
+  "updatedAt": "2026-06-10T10:30:00.000Z"
+}
 ```
 
-### Required fields
+Database shape uses snake_case:
 
-- `id`
-- `titleArabic`
-- `titleDanish`
-- `date`
-- `time`
-- `active`
-
-### Optional fields
-
-- `locationArabic`
-- `locationDanish`
-- `descriptionArabic`
-- `descriptionDanish`
-- `theme`
-
-### Validation rules
-
-- array only
-- `date` must be `YYYY-MM-DD`
-- `time` must be `HH:mm`
-- `active` must be boolean
-
-### Runtime behavior
-
-- only active events are considered
-- only events with date/time now or in the future are returned
-- the nearest upcoming event is shown
-- if there is no upcoming event, the display shows the built-in no-event message
+- `title_arabic`
+- `title_danish`
+- `event_date`
+- `event_time`
+- `location_arabic`
+- `location_danish`
+- `description_arabic`
+- `description_danish`
+- `image_data_url`
 
 ## Theme system
 
-Theme state is stored in `localStorage` under:
+Display theme still uses browser-local storage:
 
-- `imamAliDisplay.theme`
+- `body[data-theme="teal"]`
+- `body[data-theme="muharram"]`
 
-Supported values:
+Shared theme sync is not implemented yet.
 
-- `teal`
-- `muharram`
+## OCR import architecture
 
-Theme definitions live in:
+Flow:
 
-- `js/config.js`
-- `css/themes.css`
+1. upload timetable image
+2. preview image
+3. load Tesseract.js from CDN on demand
+4. place OCR text in editable textarea
+5. admin corrects text
+6. parse timetable
+7. validate preview rows
+8. save only after review
 
-Runtime flow:
+Manual review remains required because client-side OCR can misread digits, separators, and Danish weekday names.
 
-1. theme value is read from storage
-2. `data-theme` is applied to `<body>`
-3. CSS variables control colors, glow, borders, and backgrounds
-4. `display.js` swaps the logo path and banner styling
+## Parser logic
 
-## How `display.js` works
+`js/import-prayer-image.js` parses lines like:
 
-High-level behavior:
+```text
+fredag 3 01:44 04:32 13:14 21:55 22:35 23:50
+```
 
-1. load theme
-2. load prayer/event datasets
-3. resolve today and tomorrow prayer entries
-4. resolve themed feature event and general upcoming event
-5. render static panels
-6. start the live clock
-7. update next prayer and countdown every second
+Mapping:
 
-Key responsibilities:
+- `Subh` -> `fajr`
+- `Solopgang` -> `sunrise`
+- `Dhuhr` -> `dhuhr`
+- `Solnedgang` -> `sunset`
+- `Maghrib` -> `maghrib`
+- `Midnat` -> `midnight`
 
-- apply theme and logo fallback
-- render header/banner content
-- render Gregorian and Hijri date
-- render next prayer card
-- render prayer rows/cards
-- render event block
-- show prayer missing/completed fallback states
-- schedule midnight reload
+It never invents missing `asr` or `isha`.
 
-Notable implementation details:
+## Event form architecture
 
-- `getLocalDateKey()` is used for exact date matching
-- `getNextPrayer()` returns explicit statuses:
-  - `missing-today`
-  - `upcoming-today`
-  - `upcoming-tomorrow`
-  - `day-completed`
-- countdown display is formatted in:
-  - main `HH:mm:ss`
-  - Arabic `1س 19د 20ث`
-  - Danish `1t 19m 20s`
+Visible admin flow:
 
-## How `admin.js` works
+1. optional image upload
+2. bilingual titles
+3. date and time
+4. locations and descriptions
+5. theme/category
+6. active toggle
+7. save/update
 
-High-level behavior:
+Saved-event list actions:
 
-1. read saved browser data
-2. populate editors
-3. validate JSON on demand
-4. save validated JSON only
-5. save theme
-6. update saved-data status panel
-7. clear browser data when requested
+- edit
+- delete
+- duplicate
+- toggle active/inactive
 
-Key responsibilities:
+Advanced fallback:
 
-- parse textarea JSON safely
-- call `validatePrayerTimesArray()` and `validateEventsArray()`
-- prettify valid JSON
-- block invalid saves
-- save prayer times, events, and theme through `storage.js`
-- show clear success, warning, and error messages
-- repopulate sample data after clear
+- hidden event JSON editor
 
-## How `localStorage` fallback works
+## Image preview and storage approach
 
-The app is intentionally resilient.
+Current behavior:
 
-### Display side
+- event images are previewed in the browser
+- images are stored in the event record as `imageDataUrl`
+- Supabase sync stores that string in the `events` table
 
-For prayer times:
+This works for a static prototype, but it is not ideal long-term.
 
-1. try saved `localStorage`
-2. try sample JSON file
-3. try Netlify function
-4. use inline sample fallback
+## Event image display logic
 
-For events:
+`js/display.js`:
 
-1. try saved `localStorage`
-2. try sample JSON file
-3. try Netlify function
-4. use inline sample fallback
+- uses the event image when present
+- falls back to a themed placeholder when no image is present
+- uses `object-fit: cover`
+- keeps old events without `imageDataUrl` working
 
-### Admin side
+## Fallback behavior
 
-- if saved browser data exists and validates, it is shown in the editor
-- otherwise sample data is loaded into the editors
-- the saved-data status panel reports only real saved browser data
+### Display
 
-## How Netlify Functions work
+If Supabase or Netlify Functions fail:
 
-Netlify configuration is defined in `netlify.toml`.
+1. try local browser data
+2. then sample JSON
+3. then inline sample
 
-Current settings:
+### Admin
 
-- publish directory: `.`
-- functions directory: `netlify/functions`
+If remote save fails:
 
-Redirects are defined for:
-
-- `/display`
-- `/admin`
-- `/api/today-prayer-times`
-- `/api/upcoming-event`
-
-Current frontend API paths in `js/config.js` point to:
-
-- `/api/today-prayer-times`
-- `/api/upcoming-event`
-
-Netlify then rewrites those public routes to the internal function endpoints.
-
-### `today-prayer-times`
-
-- reads `data/prayer-times.sample.json`
-- accepts an optional `date` query parameter
-- returns:
-  - requested date
-  - tomorrow entry when available
-  - `items` array for frontend normalization
-
-### `upcoming-event`
-
-- reads `data/events.sample.json`
-- filters to active future events
-- returns the nearest one or `null`
+- save locally when possible
+- show: `Saved locally only. This will not update other screens until Supabase is connected.`
 
 ## How to run locally
 
-## Option 1: open files directly
+### Direct file-open mode
 
-Open either:
+Open:
 
 - `index.html`
 - `admin.html`
 
-This works without a build step.
+The pages switch automatically to:
 
-Notes:
+- `js/display-standalone.js`
+- `js/admin-standalone.js`
 
-- browsers often block `fetch()` for local JSON files under `file://`
-- the app still works because inline sample data exists
-
-## Option 2: run a simple local server
+### Static server mode
 
 Example:
 
@@ -471,174 +582,89 @@ Then open:
 - `http://localhost:8000/index.html`
 - `http://localhost:8000/admin.html`
 
-This is useful when you want the sample JSON files to load through `fetch()`.
-
 ## How to deploy on Netlify
 
-This project is deployable as static files plus Netlify Functions.
+`netlify.toml` keeps:
 
-### Required Netlify settings
+```toml
+[build]
+  publish = "."
+  functions = "netlify/functions"
+```
 
-- build command: none required
-- publish directory: `.`
-- functions directory: `netlify/functions`
+No frontend build command is required.
 
-These settings already exist in `netlify.toml`.
+Deployment:
 
-### Deployment steps
+1. push the repo
+2. create/import the site in Netlify
+3. keep publish directory at the repo root
+4. keep functions directory as `netlify/functions`
+5. add the Supabase environment variables
+6. deploy
 
-1. Push the project to a Git repository.
-2. Create a new Netlify site from that repository.
-3. Confirm Netlify detects:
-   - publish directory `.`
-   - functions directory `netlify/functions`
-4. Deploy the site.
-5. Confirm:
-   - `index.html` loads
-   - `admin.html` loads
-   - functions respond
-   - redirects from `netlify.toml` are active
+## How to test deployed functions
 
-### Post-deploy checks
+After deployment, test:
 
-- open the display page
-- open the admin page
-- save prayer times in the admin page
-- save events in the admin page
-- save a theme
-- confirm the same browser session can read the changes
+- `/.netlify/functions/get-today-prayer-times?date=2026-07-10`
+- `/.netlify/functions/get-upcoming-event`
 
-## How to add a real backend/database later
+Then test writes from the admin page:
 
-The clean path is to replace `localStorage` as the main source of truth while keeping the static frontend.
+1. save prayer times
+2. save an event
+3. delete an event
+4. confirm the display updates within about one minute or on manual refresh
 
-Recommended changes:
+## How to rotate keys
 
-1. add a hosted database
-2. add authenticated admin access
-3. save prayer times and events remotely
-4. have display screens read remote data first
-5. keep local sample data only as emergency fallback
+1. create new Supabase keys in the Supabase dashboard
+2. update the values in Netlify environment variables
+3. redeploy the site if needed
+4. verify the function endpoints again
 
-## Suggested Supabase upgrade plan
-
-### Phase 1: data storage
-
-Create tables:
-
-- `prayer_times`
-  - `date` primary key
-  - `hijri_date_arabic`
-  - `hijri_date_latin`
-  - `fajr`
-  - `sunrise`
-  - `dhuhr`
-  - `asr`
-  - `maghrib`
-  - `isha`
-- `events`
-  - `id`
-  - `title_arabic`
-  - `title_danish`
-  - `date`
-  - `time`
-  - `location_arabic`
-  - `location_danish`
-  - `description_arabic`
-  - `description_danish`
-  - `theme`
-  - `active`
-- `settings`
-  - `current_theme`
-
-### Phase 2: read path
-
-Update frontend loaders to:
-
-1. fetch Supabase data first
-2. use current local fallback chain only if the remote read fails
-
-### Phase 3: admin writes
-
-Replace `localStorage` save actions in `admin.js` with:
-
-- insert/update prayer rows
-- insert/update event rows
-- update theme setting
-
-### Phase 4: authentication
-
-Add Supabase Auth so only approved mosque admins can update data.
-
-### Phase 5: screen sync
-
-Use one of:
-
-- periodic polling
-- serverless cached API endpoints
-- realtime subscriptions for settings/events if needed
+Never commit rotated keys into source control.
 
 ## Coding standards
 
-- keep the project static-first
-- use plain HTML, CSS, and JavaScript
-- use semantic HTML
-- keep modules small and focused
-- prefer existing project patterns over new abstractions
-- use CSS custom properties for theming
-- avoid inline styles
-- avoid unnecessary comments
-- validate user-entered JSON before persisting it
-- fail gracefully when data is missing
-- do not break direct `file://` usage
+- no frontend framework
+- no frontend build step
+- semantic HTML
+- CSS custom properties for theme values
+- module-based JS
+- service role key only in Netlify Functions
+- checked-in standalone bundles must match the ES module sources
 
 ## Testing checklist
 
-### Display
+Verify after changes:
 
-- `index.html` opens directly without a build step
-- today’s prayer times are shown when data exists
-- missing today shows a clear fallback
-- next prayer is calculated correctly
-- countdown updates every second
-- after the last prayer, tomorrow’s Fajr is used when available
-- highlight moves to the correct next prayer
-- page reloads after midnight
-- no upcoming event shows the correct fallback message
-- both themes render correctly
-- missing logo image does not break layout
-
-### Admin
-
-- invalid JSON shows an error
-- invalid JSON is not saved
-- valid prayer times are prettified and saved
-- valid events are prettified and saved
-- theme saves correctly
-- status panel shows saved prayer count/date range/event count/theme
-- clear saved data restores fallback behavior
-
-### Deployment
-
-- Netlify publishes from project root
-- Netlify functions deploy from `netlify/functions`
-- function routes respond
-- redirect routes respond
+1. `index.html` loads
+2. `admin.html` loads
+3. no real Supabase keys are present in source
+4. `.env.example` contains placeholders only
+5. `.gitignore` protects `.env` files
+6. Netlify Functions read env vars safely
+7. display reads remote data first
+8. admin saves remotely with local fallback
+9. prayer OCR import still works
+10. event form still works
+11. theme switching still works
+12. `file://` mode still works
+13. standalone bundles still load
 
 ## Known limitations
 
-- no authentication on `admin.html`
-- `localStorage` data is limited to one browser profile on one device
-- no true central sync between multiple screens
-- no database persistence
-- sample JSON and inline sample data both need to stay aligned
+- theme is not yet synced through Supabase
+- admin does not yet load the full remote dataset for prayer times/events editing; remote sync is save-first, with local editing cache
+- event images are still stored inline as data URLs
+- there is no authentication layer yet
 
 ## Future improvements
 
-- replace `localStorage` with Supabase-backed storage
-- add authentication for admins
-- create CSV import for prayer times
-- add export/download of current saved data
-- add bulk event management UI
-- add remote theme scheduling
-- add optional multilingual admin help text
+- add a shared `settings` table for remote theme sync
+- move event images to Supabase Storage and store file URLs instead of data URLs
+- add admin authentication
+- add full remote list endpoints for prayer times and events
+- add audit history and rollback

@@ -143,20 +143,28 @@
               <span id="event-month" class="event-month">---</span>
               <span id="event-hijri-short" class="event-hijri-short arabic">—</span>
             </div>
+            <div id="event-media" class="event-media" data-event-category="normal">
+              <img id="event-image" alt="Upcoming event image" hidden>
+              <div id="event-image-fallback" class="event-image-fallback">
+                <span id="event-image-symbol" class="event-image-symbol">N</span>
+                <span id="event-image-label-ar" class="event-image-label arabic">فعالية المسجد</span>
+                <span id="event-image-label-da" class="event-image-label latin">Moské-arrangement</span>
+              </div>
+            </div>
             <div class="event-body">
               <h2 id="event-title-ar" class="event-title arabic">—</h2>
               <p id="event-title-da" class="event-subtitle latin">—</p>
-              <p id="event-description-ar" class="event-description arabic">—</p>
-              <p id="event-description-da" class="event-description latin">—</p>
+              <p id="event-description-ar" class="event-description arabic" hidden>—</p>
+              <p id="event-description-da" class="event-description latin" hidden>—</p>
             </div>
             <div class="event-meta-list">
-              <div class="event-meta-item">
+              <div id="event-time-item" class="event-meta-item">
                 <p class="section-label arabic">الوقت</p>
                 <p class="section-label latin">Tid</p>
                 <p id="event-time-ar" class="event-meta-value arabic">—</p>
                 <p id="event-time-da" class="event-meta-value latin">—</p>
               </div>
-              <div class="event-meta-item">
+              <div id="event-location-item" class="event-meta-item">
                 <p class="section-label arabic">المكان</p>
                 <p class="section-label latin">Sted</p>
                 <p id="event-location-ar" class="event-meta-value arabic">—</p>
@@ -172,6 +180,17 @@
       </div>
     </main>
 
-    <script type="module" src="js/display.js"></script>
+    <script>
+      (function loadDisplayRuntime() {
+        var script = document.createElement("script");
+        if (window.location.protocol === "file:") {
+          script.src = "js/display-standalone.js";
+        } else {
+          script.type = "module";
+          script.src = "js/display.js";
+        }
+        document.body.appendChild(script);
+      }());
+    </script>
   </body>
 </html>

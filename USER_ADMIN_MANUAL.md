@@ -1,350 +1,400 @@
-# USER ADMIN MANUAL
+# USER_ADMIN_MANUAL.md
 
-## What this website does
+## What the website does
 
-This website is a digital screen system for the mosque.
+This website is the digital signage system for Imam Ali Moskeen in Copenhagen.
 
-It shows:
+The public display can show:
 
 - today's prayer times
-- the current time and date
-- the Hijri date
-- the next prayer and live countdown
-- upcoming events
-- either the normal teal theme or the Muharram red theme
+- current time and date
+- Hijri date
+- next prayer with live countdown
+- upcoming event
+- teal theme or Muharram red theme
 
-There are two main pages:
+Arabic is the main display language. Danish is shown as the secondary language.
 
-- `index.html`: the public display screen
-- `admin.html`: the update page for mosque staff
+## The two pages you use
 
-You do not need to edit code to use it.
+### Display page
 
-## Before you start
+Open:
 
-This version saves data in the browser using `localStorage`.
+- `/index.html`
+- or `/display` after Netlify deployment
 
-This is important:
+This is the page shown on the mosque screen.
 
-- data is saved only in the same browser on the same device
-- if you use `admin.html` on one laptop, another laptop will not receive the update automatically
-- if the display screen uses a different browser or device, you must save the same data there as well
+### Admin page
 
-Recommended future upgrade:
+Open:
 
-- connect the project to Supabase or another online database so one admin update can sync to all screens
+- `/admin.html`
+- or `/admin` after Netlify deployment
+
+This is the page used by mosque staff to update prayer times, events, and theme.
+
+## How remote updates work
+
+When the project is deployed on Netlify with Supabase connected:
+
+- prayer times can be saved from the admin page to Supabase
+- events can be saved from the admin page to Supabase
+- mosque display screens read the shared data through Netlify Functions
+
+Display update timing:
+
+- running display screens refresh remote prayer/event data about once every minute
+- manual browser refresh updates immediately
+- the display also reloads shortly after midnight
+
+Important:
+
+- prayer times and events can sync through Supabase
+- theme selection is still local to the browser/device for now
 
 ## How to open the display screen
 
-1. Open `index.html` in a browser.
-2. Put that page on the TV, kiosk, or vertical screen you want to use.
-3. For the best result, use full screen mode in the browser.
+1. Open `index.html` or `/display`.
+2. Put this page on the TV or vertical signage screen.
+3. Leave the page open during the day.
 
-The display page updates the live clock every second and reloads automatically shortly after midnight.
+## How to use the admin page
 
-## How to open the admin page
+1. Open `admin.html` or `/admin`.
+2. Check the quick status cards.
+3. Look at the status line near the top:
+   - `Connected to Supabase. Updates will sync to mosque screens.`
+   - or `Supabase unavailable. Changes are saved locally only.`
+4. Update prayer times, events, or theme.
 
-1. Open `admin.html` in the browser you want to use for updates.
-2. Use the **Open Display Preview** button to open `index.html`.
-3. Keep `admin.html` and `index.html` in the same browser profile if you want the preview to read the saved data immediately.
+## Recommended prayer-time update method
 
-## What you can do in the admin page
+The easiest method is:
 
-The admin page lets you:
+1. upload the monthly timetable image
+2. review the OCR text
+3. correct mistakes
+4. parse the timetable
+5. review the preview table
+6. save prayer times
 
-- paste prayer times JSON
-- paste events JSON
-- validate prayer times before saving
-- validate events before saving
-- save prayer times
-- save events
-- load sample data into both editors
-- clear saved data
-- choose the active theme
-- open the display preview
-- check the saved-data status panel
+## How to upload prayer times from an image
 
-## Recommended update workflow
+1. Open `/admin`.
+2. Go to **Prayer times import**.
+3. Choose the correct **month** and **year**.
+4. Upload the timetable image.
+5. Wait for OCR.
+6. Review the extracted text.
+7. Correct mistakes manually if needed.
+8. Click **Parse timetable**.
+9. Review the preview table carefully.
+10. Fix any highlighted errors.
+11. Click **Save imported prayer times**.
+12. Open `/display` and confirm the update.
 
-1. Open `admin.html`
-2. Paste the monthly prayer times JSON
-3. Click **Validate Prayer Times**
-4. Click **Save Prayer Times**
-5. Paste the events JSON
-6. Click **Validate Events**
-7. Click **Save Events**
-8. Select the theme if needed
-9. Click **Save Theme**
-10. Open or refresh `index.html`
-11. Confirm the display looks correct
+Important warning:
 
-## How to add monthly prayer times
+OCR can make mistakes. Always compare the preview table with the original image before saving.
 
-Prayer times are saved as a JSON array.
+## Copenhagen timetable format
 
-Each day must be one object in the array.
+The Imam Ali Moskeen Copenhagen timetable uses these columns:
 
-### Required fields for each day
+- `Ugedag`
+- `Date`
+- `Subh`
+- `Solopgang`
+- `Dhuhr`
+- `Solnedgang`
+- `Maghrib`
+- `Midnat`
 
-- `date`
-- `fajr`
-- `sunrise`
-- `dhuhr`
-- `asr`
-- `maghrib`
-- `isha`
+The system imports them like this:
 
-### Optional fields
+- `Subh` -> `fajr`
+- `Solopgang` -> `sunrise`
+- `Dhuhr` -> `dhuhr`
+- `Solnedgang` -> `sunset`
+- `Maghrib` -> `maghrib`
+- `Midnat` -> `midnight`
 
-- `hijriDateArabic`
-- `hijriDateLatin`
+Important:
 
-### Date and time format
+- `Solnedgang` is not `Maghrib`
+- `Midnat` is not `Isha`
+- if `Asr` or `Isha` are missing in the timetable, they stay empty
 
-- `date` must use `YYYY-MM-DD`
-- times must use `HH:mm`
+## How to paste timetable text manually
 
-Examples:
+If OCR is unavailable, you can still paste timetable text.
 
-- correct date: `2026-06-10`
-- correct time: `17:40`
+1. Open `/admin`.
+2. Choose the correct month and year.
+3. Paste the timetable text.
+4. Click **Parse timetable**.
+5. Review the preview table.
+6. Fix any errors.
+7. Click **Save imported prayer times**.
 
-### Steps
+Example line:
 
-1. Prepare one JSON array for the month.
-2. Paste it into the **Prayer Times JSON** box.
-3. Click **Validate Prayer Times**.
-4. If the message says the data is valid, click **Save Prayer Times**.
-5. The saved-data status panel should update with:
-   - number of prayer-time days
-   - first date
-   - last date
+```text
+fredag 3 01:44 04:32 13:14 21:55 22:35 23:50
+```
 
-### Prayer times JSON example
+## How the preview table works
+
+The preview table is editable before saving.
+
+Columns:
+
+- `Date`
+- `Fajr/Subh`
+- `Sunrise/Solopgang`
+- `Dhuhr`
+- `Asr` optional
+- `Sunset/Solnedgang`
+- `Maghrib`
+- `Isha` optional
+- `Midnight/Midnat`
+- `Status`
+
+Rules:
+
+- red rows must be fixed before saving
+- save is disabled while errors exist
+- required time fields must use `HH:mm`
+- date must use `YYYY-MM-DD`
+
+## How to enter prayer times manually with JSON
+
+This is an advanced fallback method and is hidden by default.
+
+1. Open `/admin`.
+2. Click `إدخال البيانات يدوياً / Enter data manually`.
+3. Paste the JSON.
+4. Click **Validate prayer times**.
+5. Click **Save prayer times**.
+6. Open `/display` and confirm the update.
+
+## Prayer times JSON example
 
 ```json
 [
   {
-    "date": "2026-06-09",
-    "hijriDateArabic": "23 ذو الحجة 1447 هـ",
-    "hijriDateLatin": "23 Dhu al-Hijjah 1447 H",
-    "fajr": "02:29",
-    "sunrise": "04:28",
-    "dhuhr": "13:09",
-    "asr": "17:39",
-    "maghrib": "21:51",
-    "isha": "23:43"
-  },
-  {
-    "date": "2026-06-10",
-    "hijriDateArabic": "24 ذو الحجة 1447 هـ",
-    "hijriDateLatin": "24 Dhu al-Hijjah 1447 H",
-    "fajr": "02:28",
-    "sunrise": "04:27",
-    "dhuhr": "13:09",
-    "asr": "17:40",
-    "maghrib": "21:52",
-    "isha": "23:44"
+    "date": "2026-07-03",
+    "hijriDateArabic": "",
+    "hijriDateLatin": "",
+    "fajr": "01:44",
+    "sunrise": "04:32",
+    "dhuhr": "13:14",
+    "asr": "",
+    "sunset": "21:55",
+    "maghrib": "22:35",
+    "isha": "",
+    "midnight": "23:50"
   }
 ]
 ```
 
-## How to add upcoming events
+## How to add an event with the simple form
 
-Events are also saved as a JSON array.
+1. Open `/admin`.
+2. Go to **Events**.
+3. Upload an event picture if available.
+4. Enter the Arabic event name.
+5. Enter the Danish event name.
+6. Choose the date.
+7. Choose the time.
+8. Add the Arabic and Danish location.
+9. Add optional Arabic and Danish descriptions.
+10. Choose the category:
+    - Normal
+    - Muharram
+    - Ramadan
+    - Eid
+    - Majlis
+    - Friday prayer
+11. Keep **Show this event on the display** checked if it should appear publicly.
+12. Click **Save event / حفظ الفعالية**.
+13. Open `/display` and confirm the update.
 
-The display shows the nearest active upcoming event.
+## How event images work
 
-### Required fields for each event
+- supported formats: `PNG`, `JPG/JPEG`, `WEBP`
+- the admin page previews the image immediately
+- if no image is uploaded, the display uses a placeholder card
+- large images over `2 MB` may not store well in browser fallback mode
 
-- `id`
-- `titleArabic`
-- `titleDanish`
-- `date`
-- `time`
-- `active`
+Recommended image ratios:
 
-### Optional fields
+- `16:9` for landscape screens
+- `4:5` for portrait posters
 
-- `locationArabic`
-- `locationDanish`
-- `descriptionArabic`
-- `descriptionDanish`
-- `theme`
+## What to do if the image does not save
 
-### Date and time format
+1. Use an optimized image under `2 MB`.
+2. Prefer compressed `WEBP` or `JPG`.
+3. Try again.
+4. If needed, save the event without an image.
 
-- `date` must use `YYYY-MM-DD`
-- `time` must use `HH:mm`
-- `active` must be `true` or `false`
+## How to edit an event
 
-### Steps
+1. Open `/admin`.
+2. In **Saved events**, click **Edit**.
+3. Update the fields.
+4. Click **Update event / تحديث الفعالية**.
 
-1. Paste the event array into the **Events JSON** box.
-2. Click **Validate Events**.
-3. If the message says the data is valid, click **Save Events**.
-4. The saved-data status panel should update the event count.
+## How to delete an event
 
-### Events JSON example
+1. Open `/admin`.
+2. Find the event in **Saved events**.
+3. Click **Delete**.
+4. Confirm the deletion.
+
+## How to duplicate an event
+
+1. Open `/admin`.
+2. Find the event in **Saved events**.
+3. Click **Duplicate**.
+4. Edit the copy if needed.
+
+## How to hide or show an event
+
+1. Open `/admin`.
+2. In **Saved events**, click **Hide** or **Show**.
+
+Inactive events stay saved but do not appear on the public display.
+
+## Advanced: entering event JSON manually
+
+The advanced event JSON editor is still available as a backup.
+
+1. Open `/admin`.
+2. In **Events**, click `إدخال الفعاليات بصيغة JSON يدوياً / Enter event JSON manually`.
+3. Paste the JSON.
+4. Click **Validate events**.
+5. Click **Save events**.
+6. Open `/display` and confirm the update.
+
+## Events JSON example
 
 ```json
 [
   {
     "id": "event-001",
-    "titleArabic": "صلاة الجمعة",
-    "titleDanish": "Fredagsbøn (Jumu'ah)",
-    "date": "2026-06-12",
-    "time": "13:30",
-    "locationArabic": "الجامع الرئيسي",
-    "locationDanish": "Hovedmoskeen",
-    "descriptionArabic": "مرحباً بكم - نسعد بزيارتكم",
-    "descriptionDanish": "Alle er velkomne - Vi glæder os til at se dig",
-    "theme": "teal",
-    "active": true
-  },
-  {
-    "id": "event-002",
     "titleArabic": "مجلس الليلة الأولى من محرم",
     "titleDanish": "Majlis – første aften af Muharram",
-    "date": "2026-06-13",
+    "date": "2026-07-13",
     "time": "19:30",
     "locationArabic": "الجامع الرئيسي",
     "locationDanish": "Hovedmoskeen",
     "descriptionArabic": "ذكرى استشهاد الإمام الحسين عليه السلام",
     "descriptionDanish": "Mindehøjtidelighed for Imam Hussein",
+    "imageDataUrl": "",
     "theme": "muharram",
-    "active": true
+    "active": true,
+    "createdAt": "2026-06-10T10:30:00.000Z",
+    "updatedAt": "2026-06-10T10:30:00.000Z"
   }
 ]
 ```
 
-## How to switch the theme
+## How to switch theme
 
-The project includes two themes:
+1. Open `/admin`.
+2. Choose:
+   - `Teal normal theme`
+   - `Muharram red theme`
+3. Click **Save theme**.
+4. Refresh the display page on each screen where the theme should change.
 
-- `teal`: the normal daily display theme
-- `muharram`: the black and red Muharram theme
+Important:
 
-### Steps
+Theme selection is still local to the browser/device. It does not sync through Supabase yet.
 
-1. In `admin.html`, find the **Theme** section.
-2. Select `Teal` or `Muharram`.
-3. Click **Save Theme**.
-4. Refresh `index.html` if the new theme does not appear immediately.
+## How to save updates from home
+
+If Supabase is connected:
+
+1. Open the deployed `/admin` page from home.
+2. Save prayer times or events normally.
+3. Wait about one minute, or refresh the mosque display page manually.
+4. Confirm the update appears on the screen.
 
 ## How to check that the display updated
 
-After saving data in `admin.html`:
+After saving:
 
-1. Open `index.html` in the same browser.
-2. Check that the prayer times match the data you saved.
-3. Check that the event section shows the correct upcoming event.
-4. Check that the selected theme is visible.
-5. Check that the prayer row highlight and next-prayer card look correct.
-
-Useful signs that the display updated:
-
-- the prayer list matches your saved dates and times
-- the event card shows your saved event
-- the theme color changed
-- the display is reading saved local data instead of old sample data
+1. open `/display`
+2. confirm today's prayer times are correct
+3. confirm the next prayer card is correct
+4. confirm the event section is correct
+5. confirm the theme is correct for that screen
 
 ## What to do if today's prayer times are missing
 
-If the display says today's prayer data is missing:
-
-1. Open `admin.html`.
-2. Check the **Saved Data Status** panel.
-3. Look at the first and last prayer dates.
-4. Confirm that today's date is included in your saved prayer-time JSON.
-5. If today's date is missing, add it to the prayer-times array.
-6. Validate again.
-7. Save again.
-8. Refresh `index.html`.
-
-Also check:
-
-- that you saved data in the same browser and device as the display
-- that the date format is exactly `YYYY-MM-DD`
-- that all required prayer fields are present
+1. Open `/admin`.
+2. Check the first and last saved dates.
+3. Confirm today's date is included.
+4. If not, import the correct timetable month.
+5. Save again.
+6. Refresh the display page.
 
 ## What to do if the screen looks wrong
 
-If the display looks incorrect:
-
-1. Refresh `index.html`.
-2. Confirm the correct theme is selected and saved.
-3. Confirm the prayer times JSON is valid.
-4. Confirm the events JSON is valid.
-5. Check that the saved-data status panel shows the expected date range and counts.
-6. Make sure you are using the same browser/device as the screen.
-
-If you still have a problem:
-
-1. Click **Load Sample Data** in `admin.html` to load known-good example data into the editors.
-2. Do not save yet unless you want to replace your current saved data.
-3. Compare the sample format with your own JSON.
-4. If needed, click **Clear Saved Data** and let the display return to sample fallback data.
+1. Refresh `/display`.
+2. Check that today's prayer data exists.
+3. Check that the selected theme is correct.
+4. If a logo image is missing, the display uses a text fallback.
+5. If Supabase is unavailable, the page may fall back to local or sample data.
 
 ## How to refresh the screen
 
-You can refresh the display in any of these ways:
+Manual refresh:
 
-- press the browser refresh button
-- press `F5`
-- close and reopen `index.html`
-- reopen the page from the kiosk browser
+- refresh the browser
+- or reopen `/display`
 
-The display also reloads automatically shortly after midnight to pick up the new day.
+Automatic refresh:
+
+- countdown updates every second
+- remote prayer/event data refreshes about once every minute
+- full page reload happens shortly after midnight
 
 ## How to use it on multiple screens
 
-Because this version uses `localStorage`, there is no central online admin yet.
+With Supabase connected:
 
-That means:
+- one prayer-time or event update can reach multiple deployed screens
+- each screen should use the deployed display page
 
-- each screen or device stores its own saved data
-- one update does not automatically sync to all screens
+Without Supabase:
 
-### If you have multiple screens now
+- each browser/device keeps its own local data
+- changes on one device do not automatically reach another device
 
-Use one of these methods:
+## Current limitation of localStorage
 
-1. Open `admin.html` on each screen device and save the same data there.
-2. Use the same browser profile on the same device that runs the display.
-3. If several displays run from one device/browser profile, they can share the same saved data there.
+`localStorage` only saves data in the same browser on the same device.
 
-### Recommended future upgrade
+It does not sync between:
 
-For proper mosque-wide multi-screen syncing, connect the app to:
+- different computers
+- different browsers
+- home admin device and mosque screens
+
+## Recommended future upgrade
+
+For full shared management, continue using or expanding:
 
 - Supabase
-- Firebase
-- another online database and admin backend
 
-That would allow:
+Good next steps:
 
-- one central admin page
-- one source of truth for prayer times and events
-- automatic updates across all screens
-
-## Clear saved data
-
-If you want to remove the saved browser data:
-
-1. Open `admin.html`.
-2. Click **Clear Saved Data**.
-3. The saved prayer times, events, and theme will be removed from that browser.
-4. The editors will show sample fallback data again.
-5. `index.html` will go back to sample fallback data and the default teal theme.
-
-## Final reminder
-
-This version is good for:
-
-- a single device
-- a single browser profile
-- local testing
-- small manual setups
-
-For a permanent multi-screen mosque setup, the next recommended step is a shared backend such as Supabase.
+- sync theme through a shared settings table
+- move event images from data URLs to Supabase Storage
+- add admin login/authentication
