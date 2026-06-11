@@ -119,6 +119,13 @@
       events: "data/events.sample.json"
     },
     apiPaths: {
+      publicSupabaseConfig: "/.netlify/functions/public-supabase-config",
+      authGetProfile: "/.netlify/functions/auth-get-profile",
+      adminListUsers: "/.netlify/functions/admin-list-users",
+      adminCreateUser: "/.netlify/functions/admin-create-user",
+      adminUpdateUserRole: "/.netlify/functions/admin-update-user-role",
+      adminDisableUser: "/.netlify/functions/admin-disable-user",
+      adminDeleteUser: "/.netlify/functions/admin-delete-user",
       todayPrayerTimes: "/.netlify/functions/get-today-prayer-times",
       upcomingEvent: "/.netlify/functions/get-upcoming-event",
       adminPrayerTimes: "/.netlify/functions/get-admin-prayer-times",
@@ -757,6 +764,7 @@
   ];
 
   // js/remote-data.js
+  var remoteAuthTokenProvider = null;
   function canUseRemoteFunctions() {
     return typeof window !== "undefined" && window.location.protocol !== "file:" && typeof fetch === "function";
   }
@@ -786,16 +794,23 @@
         error: "Remote functions are unavailable in direct file-open mode."
       };
     }
+    const headers = buildJsonHeaders(options.headers);
+    if (remoteAuthTokenProvider) {
+      const token = await remoteAuthTokenProvider();
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+    }
     const requestOptions = {
       cache: "no-store",
       ...options,
-      headers: buildJsonHeaders(options.headers)
+      headers
     };
     if (options.body && typeof options.body !== "string") {
       requestOptions.body = JSON.stringify(options.body);
       requestOptions.headers = buildJsonHeaders({
         "Content-Type": "application/json",
-        ...options.headers
+        ...headers
       });
     }
     try {

@@ -35,6 +35,60 @@ Open:
 
 This is the page used by mosque staff to update prayer times, events, and theme.
 
+Important:
+
+- `/admin` now requires login
+- the public display page stays open and does not require login
+
+## How to log in to the admin panel
+
+1. Open `/admin`.
+2. Enter your admin email.
+3. Enter your password.
+4. Click **Login / تسجيل الدخول**.
+5. Wait for the page to verify your admin role.
+
+After successful login, the admin dashboard appears.
+
+## How to log out
+
+1. Open `/admin`.
+2. Click the **Logout / تسجيل الخروج** button in the top area.
+3. The page returns to the login screen.
+
+## Admin roles
+
+There are two admin roles:
+
+### Super admin
+
+Super admins can:
+
+- do everything normal admins can do
+- create new admin accounts
+- change admin roles
+- disable admin accounts
+- permanently remove disabled admin accounts
+- view the full admin-account list
+
+### Normal admin
+
+Normal admins can:
+
+- import prayer times
+- edit and save prayer times
+- add, edit, archive, restore, and manage events
+- upload event images
+- change the local theme setting if needed
+- manage display content
+
+Normal admins cannot:
+
+- create admin accounts
+- change admin roles
+- disable other admins
+- delete admin accounts
+
 ## How remote updates work
 
 When the project is deployed on Netlify with Supabase connected:
@@ -73,11 +127,36 @@ When Supabase is connected, old display data can be archived automatically.
 ## How to use the admin page
 
 1. Open `admin.html` or `/admin`.
-2. Check the quick status cards.
-3. Look at the status line near the top:
+2. Log in with your admin email and password.
+3. Check the quick status cards.
+4. Look at the status line near the top:
    - `Connected to Supabase. Updates will sync to mosque screens.`
    - or `Supabase unavailable. Changes are saved locally only.`
-4. Update prayer times, events, or theme.
+5. Update prayer times, events, or theme.
+
+## What to do if login fails
+
+If login does not work:
+
+1. Make sure both email and password are filled in.
+2. Check that you are using the correct admin email.
+3. Try the password again carefully.
+4. If the message says Supabase is unavailable, try again later or contact the developer.
+5. If the message says access is denied, your account may not have an active admin profile.
+
+Important:
+
+- if Supabase or the Netlify admin functions are unavailable, the login screen cannot open the dashboard
+- once login works again, your normal prayer-time and event tools are available as usual
+
+## What to do if an admin account is disabled
+
+If a disabled admin tries to log in:
+
+- login may succeed in Supabase Auth
+- but `/admin` will show access denied because the admin profile is inactive
+
+Only a super admin can reactivate access by updating the admin account in the backend/admin tools.
 
 ## Recommended prayer-time update method
 
@@ -396,9 +475,27 @@ Theme selection is still local to the browser/device. It does not sync through S
 If Supabase is connected:
 
 1. Open the deployed `/admin` page from home.
-2. Save prayer times or events normally.
-3. Wait about one minute, or refresh the mosque display page manually.
-4. Confirm the update appears on the screen.
+2. Log in with your admin account.
+3. Save prayer times or events normally.
+4. Wait about one minute, or refresh the mosque display page manually.
+5. Confirm the update appears on the screen.
+
+## How a super admin creates a new admin account
+
+1. Log in to `/admin` with a super admin account.
+2. Find the **Admin accounts / حسابات الإدارة** section.
+3. Enter the new admin email.
+4. Enter a temporary password.
+5. Choose the role:
+   - `Admin`
+   - or `Super admin`
+6. Click **Create admin account**.
+7. Share the login details securely with the new admin.
+
+Important:
+
+- do not write real passwords in public documents
+- ask the new admin to change or rotate credentials through your normal internal process if needed
 
 ## How to check that the display updated
 
@@ -473,4 +570,3 @@ Good next steps:
 
 - sync theme through a shared settings table
 - move event images from data URLs to Supabase Storage
-- add admin login/authentication

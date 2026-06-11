@@ -2,808 +2,490 @@
 
 ## Project overview
 
-`imam-ali-moskeen-display` is a static digital signage app for Imam Ali Moskeen in Copenhagen.
+`imam-ali-moskeen-display` is a Netlify-friendly mosque signage app for Imam Ali Moskeen in Copenhagen.
 
-It has two main pages:
+It has two primary surfaces:
 
-- `index.html`: public display
-- `admin.html`: admin panel
+- `index.html`: the public display, open to everyone
+- `admin.html`: the protected admin dashboard for prayer times, events, theme, and admin-account management
 
-The project is designed for:
-
-- no frontend build step
-- plain HTML, CSS, and JavaScript
-- Netlify deployment
-- direct `file://` opening
-- Supabase-backed shared prayer times and events through Netlify Functions
+The frontend is plain HTML, CSS, and JavaScript. Shared data is stored in Supabase and exposed to the browser through Netlify Functions.
 
 ## Tech stack
 
 - plain HTML
-- plain CSS
+- plain CSS with custom properties
 - plain JavaScript ES modules
-- checked-in standalone JS bundles for `file://` mode
+- checked-in standalone browser bundles for `file://` mode
 - Netlify Functions with CommonJS
-- Supabase via `@supabase/supabase-js`
-- optional Tesseract.js on `admin.html` only
-- `localStorage` fallback for browser-local persistence
+- Supabase Auth and Postgres
+- optional Tesseract.js from CDN on `admin.html` only
+- `localStorage` as a browser fallback cache
 
 ## File structure
 
 ```text
 imam-ali-moskeen-display/
-├── index.html
-├── admin.html
-├── README.md
-├── USER_ADMIN_MANUAL.md
-├── DEVELOPER_MANUAL.md
-├── package.json
-├── .env.example
-├── .gitignore
-├── netlify.toml
-├── assets/
-│   ├── logo-red.png
-│   ├── logo-teal.png
-│   └── README_ASSETS.md
-├── css/
-│   ├── base.css
-│   ├── display.css
-│   ├── admin.css
-│   └── themes.css
-├── data/
-│   ├── prayer-times.sample.json
-│   └── events.sample.json
-├── js/
-│   ├── admin.js
-│   ├── admin-standalone.js
-│   ├── clock.js
-│   ├── config.js
-│   ├── display.js
-│   ├── display-standalone.js
-│   ├── events.js
-│   ├── import-prayer-image.js
-│   ├── prayer-times.js
-│   ├── remote-data.js
-│   └── storage.js
-└── netlify/
-    └── functions/
-        ├── _shared.js
-        ├── _supabase.js
-        ├── delete-event.js
-        ├── get-today-prayer-times.js
-        ├── get-upcoming-event.js
-        ├── save-event.js
-        ├── save-prayer-times.js
-        ├── today-prayer-times.js
-        └── upcoming-event.js
+|-- index.html
+|-- admin.html
+|-- README.md
+|-- USER_ADMIN_MANUAL.md
+|-- DEVELOPER_MANUAL.md
+|-- package.json
+|-- .env.example
+|-- netlify.toml
+|-- assets/
+|-- css/
+|-- data/
+|-- database/
+|   |-- admin-auth.sql
+|   `-- cleanup-archive-old-data.sql
+|-- js/
+|   |-- admin.js
+|   |-- admin-standalone.js
+|   |-- clock.js
+|   |-- config.js
+|   |-- display.js
+|   |-- display-standalone.js
+|   |-- events.js
+|   |-- import-prayer-image.js
+|   |-- prayer-times.js
+|   |-- remote-data.js
+|   |-- storage.js
+|   `-- supabase-browser.js
+`-- netlify/
+    `-- functions/
+        |-- _admin-auth.js
+        |-- _shared.js
+        |-- _supabase.js
+        |-- public-supabase-config.js
+        |-- auth-get-profile.js
+        |-- admin-list-users.js
+        |-- admin-create-user.js
+        |-- admin-update-user-role.js
+        |-- admin-disable-user.js
+        |-- admin-delete-user.js
+        |-- seed-super-admin.js
+        |-- get-today-prayer-times.js
+        |-- get-upcoming-event.js
+        |-- get-admin-prayer-times.js
+        |-- get-admin-events.js
+        |-- save-prayer-times.js
+        |-- save-event.js
+        |-- archive-event.js
+        |-- restore-event.js
+        |-- restore-prayer-times.js
+        |-- permanently-delete-event.js
+        |-- permanently-delete-prayer-times.js
+        |-- delete-event.js
+        |-- today-prayer-times.js
+        `-- upcoming-event.js
 ```
 
-## Major files
+## Major frontend files
 
 ### `index.html`
 
-Public display markup. It loads the ES module runtime on `http/https` and the standalone bundle on `file://`.
+Public display markup. It loads `js/display.js` on `http/https` and `js/display-standalone.js` on `file://`.
 
 ### `admin.html`
 
-Admin markup. Prayer import is image-first. Event management is form-first. Advanced JSON remains hidden by default.
+Protected admin markup. It contains:
+
+- built-in login view
+- access-denied view
+- authenticated dashboard
+- prayer-time import tools
+- event management tools
+- super-admin-only account management
 
 ### `js/config.js`
 
 Central configuration:
 
-- themes
-- storage keys
-- prayer display mode
-- event categories
-- sample file paths
+- theme metadata
+- prayer display modes
+- sample paths
 - Netlify Function paths
-- admin sync status messages
-- inline sample data
-
-### `js/storage.js`
-
-Thin `localStorage` wrapper for prayer times, events, and theme.
-
-### `js/remote-data.js`
-
-Frontend helper for Netlify Function calls:
-
-- connection check
-- remote prayer-time reads
-- remote event reads
-- remote prayer-time writes
-- remote event saves
-- remote event deletes
-
-This module never uses Supabase keys directly.
+- text labels and fallback copy
+- inline sample prayer and event data
 
 ### `js/prayer-times.js`
 
-Prayer-time validation and loading logic:
+Prayer-time logic:
 
-- normalize prayer entries
-- validate flexible schemas
-- compute today/tomorrow rows
-- compute next prayer
+- schema validation
+- `standard` vs `imamAliCopenhagen` display modes
+- today's row lookup
+- tomorrow lookup
+- next-prayer calculation
 - countdown helpers
-- load order: Supabase function -> localStorage -> sample JSON -> inline sample
+- fallback load order
 
 ### `js/events.js`
 
-Event normalization, validation, CRUD helpers, and loading logic:
+Event logic:
 
-- category normalization
-- backward compatibility for legacy theme values
-- next-upcoming event selection
-- load order: Supabase function -> localStorage -> sample JSON -> inline sample
+- row normalization
+- validation
+- theme/category handling
+- nearest-upcoming event selection
+- remote/local/sample fallback load order
 
 ### `js/import-prayer-image.js`
 
-Prayer-timetable parser:
+Prayer-time image import support:
 
 - OCR text cleanup
 - Danish timetable parsing
 - preview-row generation
-- validation
-- conversion into prayer entries
+- preview validation
 
-### `js/display.js`
+### `js/remote-data.js`
 
-Display runtime:
+Browser-side Netlify Function client.
 
-- theme load
-- prayer/event data load
-- render clock, dates, next prayer, prayer list, and event
-- refresh countdown every second
-- refresh remote prayer/event data every minute
-- reload shortly after midnight
+Responsibilities:
+
+- public display reads
+- protected admin reads and writes
+- bearer token injection
+- error translation for auth failures
+
+This file never contains `SUPABASE_SERVICE_ROLE_KEY`.
+
+### `js/supabase-browser.js`
+
+Browser auth bootstrap.
+
+It:
+
+- loads the Supabase browser library from CDN
+- fetches safe public config from `/.netlify/functions/public-supabase-config`
+- creates the browser client with the anon key only
 
 ### `js/admin.js`
 
-Admin runtime:
+Authenticated admin runtime.
 
-- status cards
-- prayer OCR/text import
-- preview table editing
-- manual prayer JSON fallback
-- event form
-- saved-event list actions
-- manual event JSON fallback
-- local fallback saves
-- Supabase sync status
+Responsibilities:
+
+- login/logout
+- session restore
+- access checks through `auth-get-profile`
+- role-based UI
+- prayer import and preview editing
+- event create/edit/archive flows
+- super-admin account management
+
+### `js/display.js`
+
+Public display runtime.
+
+Responsibilities:
+
+- load theme
+- load prayer times and events
+- render live clock and countdown
+- highlight the next prayer
+- refresh remote data every minute
+- reload shortly after midnight
+
+## Major backend files
 
 ### `netlify/functions/_supabase.js`
 
-Shared Supabase client factory for Netlify Functions.
+Shared Supabase client factory.
 
 Exports:
 
 - `createSupabaseAnonClient()`
 - `createSupabaseAdminClient()`
 
+Only Netlify Functions use the service role key.
+
 ### `netlify/functions/_shared.js`
 
-Shared function-side helpers:
+Shared server-side helpers:
 
 - JSON responses
+- request parsing
+- prayer and event normalization
+- camelCase to snake_case conversion
 - Copenhagen date/time helpers
-- request-body parsing
-- prayer-time normalization/validation
-- event normalization/validation
-- camelCase <-> snake_case mapping
 
-### Compatibility wrappers
+### `netlify/functions/_admin-auth.js`
 
-- `today-prayer-times.js`
-- `upcoming-event.js`
+Shared admin permission guard.
 
-These keep older `/api/...` redirects working by delegating to the newer Supabase-backed read functions.
+Responsibilities:
 
-## Required Netlify environment variables
+- read `Authorization: Bearer ...`
+- verify the Supabase JWT
+- load `admin_profiles`
+- require `active = true`
+- optionally require `role = super_admin`
+- prevent removing the last active super admin
 
-Add these in Netlify:
+### `netlify/functions/public-supabase-config.js`
+
+Safe public config endpoint for the browser.
+
+Returns only:
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
+
+Never returns:
+
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `SEED_SUPER_ADMIN_PASSWORD`
+- `SEED_SETUP_TOKEN`
 
-Netlify path:
+### `netlify/functions/auth-get-profile.js`
 
-`Site settings -> Environment variables`
+Protected profile lookup for `/admin`.
 
-Use `.env.example` for placeholder names only.
-
-## Security rules
-
-### Never expose the service role key
-
-`SUPABASE_SERVICE_ROLE_KEY` must never appear in:
-
-- frontend JavaScript
-- HTML
-- CSS
-- committed config files
-- client-side network calls
-
-Only Netlify Functions may use it.
-
-### Frontend safety boundary
-
-Frontend code only talks to:
-
-- `/.netlify/functions/get-today-prayer-times`
-- `/.netlify/functions/get-upcoming-event`
-- `/.netlify/functions/save-prayer-times`
-- `/.netlify/functions/save-event`
-- `/.netlify/functions/delete-event`
-
-No frontend file imports `@supabase/supabase-js`.
-
-## Supabase client architecture
-
-### Read client
-
-`createSupabaseAnonClient()` uses:
-
-- `process.env.SUPABASE_URL`
-- `process.env.SUPABASE_ANON_KEY`
-
-Used for:
-
-- `get-today-prayer-times.js`
-- `get-upcoming-event.js`
-
-### Admin client
-
-`createSupabaseAdminClient()` uses:
-
-- `process.env.SUPABASE_URL`
-- `process.env.SUPABASE_SERVICE_ROLE_KEY`
-
-Used for:
-
-- `save-prayer-times.js`
-- `save-event.js`
-- `delete-event.js`
-
-## Netlify Functions architecture
-
-### `get-today-prayer-times.js`
-
-Reads from Supabase table:
-
-- `prayer_times`
-
-Expected columns:
-
-- `date`
-- `hijri_date_arabic`
-- `hijri_date_latin`
-- `fajr`
-- `sunrise`
-- `dhuhr`
-- `asr`
-- `sunset`
-- `maghrib`
-- `isha`
-- `midnight`
-
-Behavior:
-
-- accepts optional `?date=YYYY-MM-DD`
-- returns today plus tomorrow when available
-- returns `404` when today's row is missing
-- returns JSON without crashing on failure
-
-### `get-upcoming-event.js`
-
-Reads from Supabase table:
-
-- `events`
-
-Expected columns:
+Returns the authenticated admin's:
 
 - `id`
-- `title_arabic`
-- `title_danish`
-- `event_date`
-- `event_time`
-- `location_arabic`
-- `location_danish`
-- `description_arabic`
-- `description_danish`
-- `image_data_url`
-- `theme`
+- `email`
+- `role`
 - `active`
-- `created_at`
-- `updated_at`
 
-Behavior:
+### Admin account management functions
 
-- reads active events
-- sorts by `event_date` and `event_time`
-- returns the next future event
-- falls back to the most recent past active event if needed
-- returns `upcomingEvent: null` when no event exists
+All of these are super-admin only:
 
-### `save-prayer-times.js`
+- `admin-list-users.js`
+- `admin-create-user.js`
+- `admin-update-user-role.js`
+- `admin-disable-user.js`
+- `admin-delete-user.js`
 
-Behavior:
+Important safeguards:
 
-- POST only
-- accepts an array or `{ items: [...] }`
-- validates input before writing
-- upserts into `prayer_times` on `date`
-- uses service role key only inside the function
+- no password is returned in responses
+- the last active super admin cannot be disabled, deleted, or demoted
+- permanent deletion requires the target account to be inactive first
 
-### `save-event.js`
+### Protected content-management functions
 
-Behavior:
-
-- POST only
-- accepts camelCase or snake_case fields
-- validates required fields:
-  - `titleArabic` / `title_arabic`
-  - `titleDanish` / `title_danish`
-  - `date` / `event_date`
-  - `time` / `event_time`
-- upserts on `id`
-
-### `delete-event.js`
-
-Behavior:
-
-- compatibility wrapper
-- forwards to `archive-event.js`
-- keeps older callers archive-first instead of hard-deleting
-
-## Data flow
-
-### Display page
-
-1. load theme from `localStorage`
-2. load prayer times in this order:
-   - Supabase read function
-   - `localStorage`
-   - sample JSON
-   - inline sample
-3. load events in this order:
-   - Supabase read function
-   - `localStorage`
-   - sample JSON
-   - inline sample
-4. render display
-5. refresh countdown every second
-6. refresh remote data every minute
-7. reload after midnight
-
-### Admin page
-
-1. load local prayer times, events, and theme for editing/fallback
-2. check whether Supabase read functions are reachable
-3. show connection status
-4. on save:
-   - attempt local save
-   - attempt remote Netlify Function save
-   - show success, local-only warning, or Supabase error
-
-## Prayer-time data model
-
-Unified frontend shape:
-
-```json
-{
-  "date": "2026-07-03",
-  "hijriDateArabic": "",
-  "hijriDateLatin": "",
-  "fajr": "01:44",
-  "sunrise": "04:32",
-  "dhuhr": "13:14",
-  "asr": "",
-  "sunset": "21:55",
-  "maghrib": "22:35",
-  "isha": "",
-  "midnight": "23:50"
-}
-```
-
-For Copenhagen mode, required fields are:
-
-- `date`
-- `fajr`
-- `sunrise`
-- `dhuhr`
-- `sunset`
-- `maghrib`
-- `midnight`
-
-## Event data model
-
-Frontend shape:
-
-```json
-{
-  "id": "event-001",
-  "titleArabic": "مجلس الليلة الأولى من محرم",
-  "titleDanish": "Majlis – første aften af Muharram",
-  "date": "2026-07-13",
-  "time": "19:30",
-  "locationArabic": "الجامع الرئيسي",
-  "locationDanish": "Hovedmoskeen",
-  "descriptionArabic": "ذكرى استشهاد الإمام الحسين عليه السلام",
-  "descriptionDanish": "Mindehøjtidelighed for Imam Hussein",
-  "imageDataUrl": "data:image/webp;base64,...",
-  "theme": "muharram",
-  "active": true,
-  "createdAt": "2026-06-10T10:30:00.000Z",
-  "updatedAt": "2026-06-10T10:30:00.000Z"
-}
-```
-
-Database shape uses snake_case:
-
-- `title_arabic`
-- `title_danish`
-- `event_date`
-- `event_time`
-- `location_arabic`
-- `location_danish`
-- `description_arabic`
-- `description_danish`
-- `image_data_url`
-
-## Theme system
-
-Display theme still uses browser-local storage:
-
-- `body[data-theme="teal"]`
-- `body[data-theme="muharram"]`
-
-Shared theme sync is not implemented yet.
-
-Important display rule:
-
-- debug labels, theme badges, and data-source badges must not be rendered on the public display
-- source/theme status indicators belong in `admin.html` only
-- the public screen should show visitor-facing content only
-
-## OCR import architecture
-
-Flow:
-
-1. upload timetable image
-2. preview image
-3. load Tesseract.js from CDN on demand
-4. place OCR text in editable textarea
-5. optionally run OCR text cleanup
-6. admin corrects text
-7. parse timetable
-8. validate preview rows
-9. save only after review
-
-Manual review remains required because client-side OCR can misread digits, separators, and Danish weekday names.
-
-## Parser logic
-
-`js/import-prayer-image.js` parses lines like:
-
-```text
-fredag 3 01:44 04:32 13:14 21:55 22:35 23:50
-```
-
-Mapping:
-
-- `Subh` -> `fajr`
-- `Solopgang` -> `sunrise`
-- `Dhuhr` -> `dhuhr`
-- `Solnedgang` -> `sunset`
-- `Maghrib` -> `maghrib`
-- `Midnat` -> `midnight`
-
-It never invents missing `asr` or `isha`.
-
-## Preview table architecture
-
-`js/admin.js` keeps parsed rows in `state.previewRows`.
-
-Each row stores:
-
-- editable prayer fields
-- `sourceLine`
-- `sourceLineNumber`
-- `fieldErrors`
-- `errors`
-- `statusText`
-
-The preview render is split into two responsive views:
-
-- desktop/laptop: wide editable table inside `.preview-table-wrap`
-- mobile: stacked `.preview-card` layout
-
-Both views write back into the same `state.previewRows` collection through delegated input events.
-
-## Preview validation rules
-
-Validation happens in `validateImportedPrayerRows()` inside [js/import-prayer-image.js](/c:/Users/alhil/Desktop/Imam Ali Moske/imam_ali_time_table_screen/js/import-prayer-image.js:1).
-
-Rules:
-
-- `date` is required and must use `YYYY-MM-DD`
-- `fajr`, `sunrise`, `dhuhr`, `sunset`, `maghrib`, and `midnight` are required and must use `HH:mm`
-- `asr` and `isha` may be empty
-- duplicate dates are rejected
-
-`refreshPreviewValidation()` in [js/admin.js](/c:/Users/alhil/Desktop/Imam Ali Moske/imam_ali_time_table_screen/js/admin.js:1) recalculates:
-
-- summary cards
-- validation warning box
-- per-cell invalid styling
-- per-row status copy
-- save button enabled state
-
-## Responsive preview behavior
-
-The parsed timetable review step is intentionally not one layout for every screen:
-
-- at wider widths, the admin gets a scrollable table with fixed minimum column widths
-- at smaller widths, the table is hidden and editable cards are shown instead
-- horizontal scrolling is confined to the preview table wrapper, not the whole page
-
-## OCR cleanup logic
-
-Before parsing, the import module normalizes common OCR mistakes:
-
-- `01.44` -> `01:44`
-- `01 : 44` -> `01:44`
-- `22:30,` -> `22:30`
-- repeated spaces collapse to single spaces
-- obvious header/footer/noise lines are removed during cleanup
-
-The optional **Auto-fix OCR text** button applies this cleanup to the editable import textarea before reparsing.
-
-## Date parsing from month and year
-
-The timetable image usually contains only day numbers. The parser therefore builds full dates from:
-
-- the selected admin month
-- the selected admin year
-- the day number found on each Danish weekday row
-
-Example:
-
-- selected month: `7`
-- selected year: `2026`
-- row day number: `3`
-- output date: `2026-07-03`
-
-If the line has enough prayer-time values but the day number is missing or invalid, the parser keeps the row in preview with an invalid `date` so the admin can correct it manually.
-
-## Why preview validation is required
-
-The preview step is a deliberate safety barrier:
-
-- OCR is unreliable enough that direct save would create silent timetable errors
-- mosque staff need a clear correction step before shared data syncs
-- the save action remains disabled until every required field is valid
-
-## Event form architecture
-
-Visible admin flow:
-
-1. optional image upload
-2. bilingual titles
-3. date and time
-4. locations and descriptions
-5. theme/category
-6. active toggle
-7. save/update
-
-Saved-event list actions:
-
-- edit
-- delete
-- duplicate
-- toggle active/inactive
-
-Advanced fallback:
-
-- hidden event JSON editor
-
-## Image preview and storage approach
-
-Current behavior:
-
-- event images are previewed in the browser
-- images are stored in the event record as `imageDataUrl`
-- Supabase sync stores that string in the `events` table
-
-This works for a static prototype, but it is not ideal long-term.
-
-## Event image display logic
-
-`js/display.js`:
-
-- uses the event image when present
-- falls back to a themed placeholder when no image is present
-- uses `object-fit: cover`
-- keeps old events without `imageDataUrl` working
-
-## Fallback behavior
-
-### Display
-
-If Supabase or Netlify Functions fail:
-
-1. try local browser data
-2. then sample JSON
-3. then inline sample
-
-### Admin
-
-If remote save fails:
-
-- save locally when possible
-- show: `Saved locally only. This will not update other screens until Supabase is connected.`
-
-## How to run locally
-
-### Direct file-open mode
-
-Open:
-
-- `index.html`
-- `admin.html`
-
-The pages switch automatically to:
-
-- `js/display-standalone.js`
-- `js/admin-standalone.js`
-
-### Static server mode
-
-Example:
-
-```powershell
-python -m http.server 8000
-```
-
-Then open:
-
-- `http://localhost:8000/index.html`
-- `http://localhost:8000/admin.html`
-
-## How to deploy on Netlify
-
-`netlify.toml` keeps:
-
-```toml
-[build]
-  publish = "."
-  functions = "netlify/functions"
-```
-
-No frontend build command is required.
-
-Deployment:
-
-1. push the repo
-2. create/import the site in Netlify
-3. keep publish directory at the repo root
-4. keep functions directory as `netlify/functions`
-5. add the Supabase environment variables
-6. deploy
-
-## How to test deployed functions
-
-After deployment, test:
-
-- `/.netlify/functions/get-today-prayer-times?date=2026-07-10`
-- `/.netlify/functions/get-upcoming-event`
-
-Then test writes from the admin page:
-
-1. save prayer times
-2. save an event
-3. archive an event, then restore it from the archived section
-4. confirm the display updates within about one minute or on manual refresh
-
-## How to rotate keys
-
-1. create new Supabase keys in the Supabase dashboard
-2. update the values in Netlify environment variables
-3. redeploy the site if needed
-4. verify the function endpoints again
-
-Never commit rotated keys into source control.
-
-## Coding standards
-
-- no frontend framework
-- no frontend build step
-- semantic HTML
-- CSS custom properties for theme values
-- module-based JS
-- service role key only in Netlify Functions
-- checked-in standalone bundles must match the ES module sources
-
-## Testing checklist
-
-Verify after changes:
-
-1. `index.html` loads
-2. `admin.html` loads
-3. no real Supabase keys are present in source
-4. `.env.example` contains placeholders only
-5. `.gitignore` protects `.env` files
-6. Netlify Functions read env vars safely
-7. display reads remote data first
-8. admin saves remotely with local fallback
-9. prayer OCR import still works
-10. event form still works
-11. theme switching still works
-12. `file://` mode still works
-13. standalone bundles still load
-
-## Archive and cleanup
-
-Archive-first behavior is part of the Supabase-backed admin flow.
-
-Database fields:
-
-- `prayer_times.archived boolean default false`
-- `events.archived boolean default false`
-
-Behavior:
-
-- public display functions exclude archived rows
-- new prayer times are saved with `archived = false`
-- new events are saved with `archived = false`
-- archiving an active event removes it from the public display without hard-deleting it
-- permanent deletion is restricted to archived rows/items
-
-SQL migration file:
-
-- `database/cleanup-archive-old-data.sql`
-
-The SQL file:
-
-- enables `pg_cron`
-- adds `archived` columns if they do not exist
-- creates `public.archive_old_display_data()`
-- archives prayer times earlier than the first day of the current month
-- archives events older than 7 days after their event date/time
-- schedules the cleanup at `03:15 UTC` every day
-
-Manual run:
-
-```sql
-select public.archive_old_display_data();
-```
-
-Unschedule the cron job:
-
-```sql
-select cron.unschedule(jobid)
-from cron.job
-where jobname = 'archive-old-display-data';
-```
-
-Admin/archive function set:
+These require any active admin account:
 
 - `get-admin-prayer-times.js`
 - `get-admin-events.js`
+- `save-prayer-times.js`
+- `save-event.js`
 - `archive-event.js`
 - `restore-event.js`
 - `restore-prayer-times.js`
 - `permanently-delete-event.js`
 - `permanently-delete-prayer-times.js`
 
-`delete-event.js` is now only a compatibility wrapper that archives through `archive-event.js`.
+### Public display functions
 
-## Archive-aware data model additions
+These remain public:
 
-Prayer-time example:
+- `get-today-prayer-times.js`
+- `get-upcoming-event.js`
+- wrapper endpoints `today-prayer-times.js` and `upcoming-event.js`
+
+Public display reads intentionally stay open because mosque screens do not log in.
+
+## Supabase Auth architecture
+
+### Browser side
+
+`/admin` uses email/password login through Supabase Auth.
+
+The browser only receives:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+
+Flow:
+
+1. `admin.html` loads `js/admin.js`
+2. `js/supabase-browser.js` fetches `public-supabase-config`
+3. Supabase Auth restores or creates a session
+4. `auth-get-profile` verifies the bearer token and returns the matching `admin_profiles` row
+5. the dashboard opens only if the profile exists and `active = true`
+
+### Server side
+
+Protected functions use `_admin-auth.js`.
+
+Every protected action:
+
+1. reads the bearer token from request headers
+2. verifies the Supabase user
+3. reads `admin_profiles`
+4. denies access when no profile exists
+5. denies access when `active = false`
+6. denies access to super-admin actions when the role is only `admin`
+
+## `admin_profiles` table
+
+SQL file:
+
+- `database/admin-auth.sql`
+
+Expected table:
+
+```sql
+create table if not exists public.admin_profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text not null unique,
+  role text not null check (role in ('super_admin', 'admin')),
+  active boolean not null default true,
+  created_at timestamptz default timezone('utc', now()),
+  updated_at timestamptz default timezone('utc', now())
+);
+```
+
+The SQL file also:
+
+- backfills missing columns safely
+- adds indexes
+- adds an `updated_at` trigger
+- enables RLS
+- adds policies for own-profile reads and super-admin management
+
+## Role-based access control
+
+### `super_admin`
+
+Can:
+
+- do all normal admin actions
+- create admin users
+- list admin users
+- change admin roles
+- disable admin accounts
+- permanently delete disabled admin accounts
+
+### `admin`
+
+Can:
+
+- manage prayer times
+- manage events
+- manage display content
+
+Cannot:
+
+- view other admin accounts
+- create admin users
+- change roles
+- disable or delete admins
+
+## Environment variables
+
+Required in Netlify:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SEED_SUPER_ADMIN_EMAIL`
+- `SEED_SUPER_ADMIN_PASSWORD`
+- `SEED_SETUP_TOKEN`
+
+Project-specific value:
+
+- `SEED_SUPER_ADMIN_EMAIL=noorlocatoor@gmail.com`
+
+Important:
+
+- never commit real secrets
+- never expose the service role key to the browser
+- never expose the seed password or setup token to the browser
+
+Reference file:
+
+- `.env.example`
+
+## First super admin seed
+
+Function:
+
+- `netlify/functions/seed-super-admin.js`
+
+Required request:
+
+- `POST /.netlify/functions/seed-super-admin`
+- header: `x-seed-token: <SEED_SETUP_TOKEN>`
+
+The function:
+
+- reads `SEED_SUPER_ADMIN_EMAIL`
+- reads `SEED_SUPER_ADMIN_PASSWORD`
+- reads `SEED_SETUP_TOKEN`
+- uses `SUPABASE_SERVICE_ROLE_KEY`
+- creates the auth user if missing
+- repairs the `admin_profiles` row if the user already exists
+- enforces `role = super_admin`
+- enforces `active = true`
+
+Security rules:
+
+- the password is read only from `process.env.SEED_SUPER_ADMIN_PASSWORD`
+- the password is never logged
+- the password is never returned
+- requests without the correct `x-seed-token` return `403`
+
+Recommended post-seed cleanup:
+
+1. remove `SEED_SUPER_ADMIN_PASSWORD` from Netlify
+2. remove `SEED_SETUP_TOKEN` from Netlify
+3. or remove/disable `seed-super-admin.js`
+
+## Data flow
+
+### Public display
+
+Prayer-time load order:
+
+1. `/.netlify/functions/get-today-prayer-times`
+2. `localStorage`
+3. `data/prayer-times.sample.json`
+4. inline sample data
+
+Event load order:
+
+1. `/.netlify/functions/get-upcoming-event`
+2. `localStorage`
+3. `data/events.sample.json`
+4. inline sample data
+
+The display refreshes:
+
+- countdown every second
+- remote data every minute
+- full page shortly after midnight
+
+### Admin dashboard
+
+Access flow:
+
+1. restore Supabase session
+2. call `auth-get-profile`
+3. show dashboard only for active admin users
+
+Write flow:
+
+1. save locally in browser state and storage
+2. attempt remote Netlify Function write with bearer token
+3. show synced or local-only status
+
+Important nuance:
+
+- `/admin` itself now depends on Supabase auth and Netlify Functions
+- once the dashboard is open, individual content saves still keep local fallback behavior if a write request fails
+
+## Prayer-time data model
+
+Unified frontend shape:
 
 ```json
 {
@@ -822,41 +504,282 @@ Prayer-time example:
 }
 ```
 
-Event example:
+Display modes:
+
+- `standard`: `fajr`, `sunrise`, `dhuhr`, `asr`, `maghrib`, `isha`
+- `imamAliCopenhagen`: `fajr`, `sunrise`, `dhuhr`, `sunset`, `maghrib`, `midnight`
+
+Default:
+
+- `imamAliCopenhagen`
+
+## Event data model
+
+Frontend shape:
 
 ```json
 {
   "id": "event-001",
-  "titleArabic": "Majlis",
-  "titleDanish": "Majlis",
+  "titleArabic": "Majlis Arabic title",
+  "titleDanish": "Majlis - first evening of Muharram",
   "date": "2026-07-13",
   "time": "19:30",
+  "locationArabic": "Mosque hall",
+  "locationDanish": "Hovedmoskeen",
+  "descriptionArabic": "Program description",
+  "descriptionDanish": "Program description",
+  "imageDataUrl": "",
+  "theme": "muharram",
   "active": true,
   "archived": false
 }
 ```
 
-## Archive notes for future backend work
+Database shape uses snake_case:
 
-- keep the service role key inside Netlify Functions only
-- keep archive and restore actions server-side
-- add admin authentication before exposing archive management on a public deployment
-- consider moving cleanup into a protected RPC if you later centralize admin auth in Supabase
+- `title_arabic`
+- `title_danish`
+- `event_date`
+- `event_time`
+- `location_arabic`
+- `location_danish`
+- `description_arabic`
+- `description_danish`
+- `image_data_url`
+
+## Theme system
+
+Display themes:
+
+- `teal`
+- `muharram`
+
+Storage:
+
+- browser-local via `localStorage`
+
+Current limitation:
+
+- theme selection is not yet shared through Supabase
+
+## OCR import architecture
+
+`admin.html` prioritizes prayer import in this order:
+
+1. upload timetable image
+2. review OCR text
+3. fix OCR text manually
+4. parse timetable
+5. review editable preview
+6. save
+
+The OCR flow is intentionally review-first because client-side OCR can misread:
+
+- digits
+- separators
+- Danish weekday names
+- column alignment
+
+Manual JSON entry remains available as an advanced fallback, hidden by default.
+
+## Archive and cleanup
+
+SQL file:
+
+- `database/cleanup-archive-old-data.sql`
+
+Behavior:
+
+- archives prayer times before the first day of the current month
+- archives events 7 days after event date/time
+- schedules the job daily at `03:15 UTC` using `pg_cron`
+
+Archive-first rules:
+
+- archived rows are excluded from the public display
+- archived rows can be restored from the admin UI
+- permanent deletion is restricted to archived rows
+
+Manual run:
+
+```sql
+select public.archive_old_display_data();
+```
+
+Unschedule:
+
+```sql
+select cron.unschedule(jobid)
+from cron.job
+where jobname = 'archive-old-display-data';
+```
+
+## How `display.js` works
+
+At startup it:
+
+1. reads theme from storage
+2. loads prayer times and events
+3. derives today's row and tomorrow's row
+4. calculates next prayer using the configured mode
+5. renders the clock, prayer list, event, and footer
+
+During runtime it:
+
+- updates the clock and countdown every second
+- refreshes remote data every minute
+- reloads after the date changes
+
+## How `admin.js` works
+
+At startup it:
+
+1. renders the static admin shell
+2. initializes import and event UI state
+3. creates a browser auth client
+4. restores the Supabase session
+5. calls `auth-get-profile`
+6. either shows login, access denied, or the dashboard
+
+After login it:
+
+- injects bearer tokens into protected Netlify Function calls
+- shows super-admin tools only when `role === "super_admin"`
+- keeps the existing prayer and event editing flows intact
+
+## How local fallback works
+
+### Display
+
+Display remains resilient without Supabase:
+
+- remote functions first
+- then local storage
+- then bundled sample data
+
+### Admin
+
+Admin no longer has a no-auth dashboard fallback.
+
+That means:
+
+- if the public auth/config functions are unavailable, `/admin` cannot be used
+- after a successful login, failed content writes still preserve the local browser copy and show a warning
+
+This tradeoff is deliberate because `/admin` is now protected.
+
+## How to run locally
+
+### Direct file-open mode
+
+Open:
+
+- `index.html`
+- `admin.html`
+
+Notes:
+
+- `index.html` works with checked-in standalone bundle fallback
+- `admin.html` is useful for layout inspection, but real login requires Netlify Functions and Supabase over `http/https`
+
+### Static server mode
+
+Example:
+
+```powershell
+python -m http.server 8000
+```
+
+Then open:
+
+- `http://localhost:8000/index.html`
+- `http://localhost:8000/admin.html`
+
+## Rebuilding standalone bundles
+
+No build step is required for deployment, but the checked-in standalone bundles should be refreshed when module sources change.
+
+Example:
+
+```powershell
+npx esbuild js/display.js --bundle --format=iife --platform=browser --outfile=js/display-standalone.js
+npx esbuild js/admin.js --bundle --format=iife --platform=browser --outfile=js/admin-standalone.js
+```
+
+## How to deploy on Netlify
+
+`netlify.toml`:
+
+```toml
+[build]
+  publish = "."
+  functions = "netlify/functions"
+```
+
+Deployment steps:
+
+1. push the repository
+2. create or import the site in Netlify
+3. keep the publish directory as the repository root
+4. keep the functions directory as `netlify/functions`
+5. add the Supabase and seed environment variables
+6. deploy
+7. run `database/admin-auth.sql` in Supabase
+8. run `database/cleanup-archive-old-data.sql` in Supabase
+9. call the seed function once
+
+## Suggested Supabase upgrade path
+
+This project already uses Supabase for shared data. A sensible next step is expanding that into a fuller backend:
+
+1. move theme into a shared `settings` table
+2. move event images from inline data URLs to Supabase Storage
+3. add password-reset and invite flows for admins
+4. add audit logs for prayer, event, and admin changes
+5. add row ownership and change-history tables if governance becomes important
+
+## Coding standards
+
+- keep the frontend framework-free
+- keep Netlify deployment static-first
+- prefer existing project patterns over new abstractions
+- keep service-role usage inside Netlify Functions only
+- update checked-in standalone bundles when source modules change
+- keep comments short and only where they help
+
+## Testing checklist
+
+Verify after auth-related changes:
+
+1. `/admin` shows login when unauthenticated
+2. valid login opens the dashboard
+3. invalid login stays on the login view with an error
+4. users without `admin_profiles` are denied
+5. inactive admins are denied
+6. normal admins do not see the super-admin panel
+7. normal admins receive `403` from super-admin-only functions
+8. super admins can list admin users
+9. super admins can create admin users
+10. super admins can change roles
+11. last active super admin cannot be demoted, disabled, or deleted
+12. protected content functions require bearer auth
+13. public display functions remain open
+14. seed function rejects missing or wrong `x-seed-token`
+15. no real secrets appear in frontend files or docs
+16. standalone bundles still load
 
 ## Known limitations
 
-- theme is not yet synced through Supabase
-- admin now loads remote active and archived datasets when Supabase is reachable, but still keeps a browser-local cache for fallback
-- event images are still stored inline as data URLs
-- there is no authentication layer yet
-- archive management endpoints are still public until an auth layer is added
-- OCR still requires human review before saving
+- theme selection is still browser-local
+- event images are still stored as data URLs
+- `/admin` requires deployed Netlify and Supabase auth infrastructure and cannot do real login in direct `file://` mode
+- there is no password-reset UI yet
+- Tesseract OCR still requires human review before saving
 
 ## Future improvements
 
-- add a shared `settings` table for remote theme sync
-- move event images to Supabase Storage and store file URLs instead of data URLs
-- add admin authentication
-- add full remote list endpoints for prayer times and events
-- move archive management behind authenticated admin access
-- add audit history and rollback
+- add a remote theme and settings table
+- move event images to Supabase Storage
+- add password reset and invite-based onboarding
+- add audit trails for admin changes
+- add server-side OCR or upload-assisted parsing for cleaner imports

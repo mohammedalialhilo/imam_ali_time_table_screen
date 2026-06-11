@@ -119,6 +119,13 @@
       events: "data/events.sample.json"
     },
     apiPaths: {
+      publicSupabaseConfig: "/.netlify/functions/public-supabase-config",
+      authGetProfile: "/.netlify/functions/auth-get-profile",
+      adminListUsers: "/.netlify/functions/admin-list-users",
+      adminCreateUser: "/.netlify/functions/admin-create-user",
+      adminUpdateUserRole: "/.netlify/functions/admin-update-user-role",
+      adminDisableUser: "/.netlify/functions/admin-disable-user",
+      adminDeleteUser: "/.netlify/functions/admin-delete-user",
       todayPrayerTimes: "/.netlify/functions/get-today-prayer-times",
       upcomingEvent: "/.netlify/functions/get-upcoming-event",
       adminPrayerTimes: "/.netlify/functions/get-admin-prayer-times",
@@ -757,6 +764,7 @@
   ];
 
   // js/remote-data.js
+  var remoteAuthTokenProvider = null;
   function canUseRemoteFunctions() {
     return typeof window !== "undefined" && window.location.protocol !== "file:" && typeof fetch === "function";
   }
@@ -776,6 +784,9 @@
     const query = searchParams.toString();
     return query ? `?${query}` : "";
   }
+  function setRemoteAuthTokenProvider(provider) {
+    remoteAuthTokenProvider = typeof provider === "function" ? provider : null;
+  }
   async function requestJson(url, options = {}) {
     if (!canUseRemoteFunctions()) {
       return {
@@ -786,16 +797,23 @@
         error: "Remote functions are unavailable in direct file-open mode."
       };
     }
+    const headers = buildJsonHeaders(options.headers);
+    if (remoteAuthTokenProvider) {
+      const token = await remoteAuthTokenProvider();
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+    }
     const requestOptions = {
       cache: "no-store",
       ...options,
-      headers: buildJsonHeaders(options.headers)
+      headers
     };
     if (options.body && typeof options.body !== "string") {
       requestOptions.body = JSON.stringify(options.body);
       requestOptions.headers = buildJsonHeaders({
         "Content-Type": "application/json",
-        ...options.headers
+        ...headers
       });
     }
     try {
@@ -827,6 +845,12 @@
     if (result?.skipped) {
       return APP_CONFIG.syncMessages.localOnly;
     }
+    if (result?.status === 401) {
+      return "Your admin session is missing or has expired. Please log in again.";
+    }
+    if (result?.status === 403) {
+      return "You do not have permission to perform this action.";
+    }
     if (result?.status === 503) {
       return APP_CONFIG.syncMessages.saveError;
     }
@@ -834,6 +858,12 @@
       return `${fallbackMessage} ${result.error}`.trim();
     }
     return fallbackMessage;
+  }
+  async function loadPublicSupabaseConfig() {
+    return requestJson(APP_CONFIG.apiPaths.publicSupabaseConfig);
+  }
+  async function loadAuthProfile() {
+    return requestJson(APP_CONFIG.apiPaths.authGetProfile);
   }
   async function loadUpcomingEventFromRemote() {
     return requestJson(APP_CONFIG.apiPaths.upcomingEvent);
@@ -890,6 +920,36 @@
     return requestJson(APP_CONFIG.apiPaths.permanentlyDeletePrayerTimes, {
       method: "POST",
       body: { ...payload, confirm: true }
+    });
+  }
+  async function loadAdminUsersFromRemote() {
+    return requestJson(APP_CONFIG.apiPaths.adminListUsers);
+  }
+  async function createAdminUserRemotely(payload) {
+    return requestJson(APP_CONFIG.apiPaths.adminCreateUser, {
+      method: "POST",
+      body: payload
+    });
+  }
+  async function updateAdminUserRoleRemotely(payload) {
+    return requestJson(APP_CONFIG.apiPaths.adminUpdateUserRole, {
+      method: "POST",
+      body: payload
+    });
+  }
+  async function disableAdminUserRemotely(userId) {
+    return requestJson(APP_CONFIG.apiPaths.adminDisableUser, {
+      method: "POST",
+      body: { id: userId }
+    });
+  }
+  async function deleteAdminUserRemotely(userId, options = {}) {
+    return requestJson(APP_CONFIG.apiPaths.adminDeleteUser, {
+      method: "POST",
+      body: {
+        id: userId,
+        permanent: options.permanent === true
+      }
     });
   }
   async function checkSupabaseConnection() {
@@ -1818,6 +1878,77 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     return sanitizePrayerTimesArray(getPrayerTimesFromStorage(), options);
   }
 
+  // js/supabase-browser.js
+  var SUPABASE_CDN_URL = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js";
+  var supabaseLibraryPromise = null;
+  var supabaseClientPromise = null;
+  function canUseBrowserAuth() {
+    return typeof window !== "undefined" && typeof document !== "undefined" && window.location.protocol !== "file:";
+  }
+  function loadSupabaseLibrary() {
+    if (window.supabase?.createClient) {
+      return Promise.resolve(window.supabase);
+    }
+    if (supabaseLibraryPromise) {
+      return supabaseLibraryPromise;
+    }
+    supabaseLibraryPromise = new Promise((resolve, reject) => {
+      const existingScript = document.querySelector('script[data-supabase-browser="true"]');
+      if (existingScript) {
+        existingScript.addEventListener("load", () => resolve(window.supabase));
+        existingScript.addEventListener("error", () => reject(new Error("Could not load Supabase browser library.")));
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = SUPABASE_CDN_URL;
+      script.async = true;
+      script.dataset.supabaseBrowser = "true";
+      script.onload = () => {
+        if (window.supabase?.createClient) {
+          resolve(window.supabase);
+          return;
+        }
+        reject(new Error("Supabase browser library did not initialize correctly."));
+      };
+      script.onerror = () => reject(new Error("Could not load Supabase browser library."));
+      document.head.appendChild(script);
+    });
+    return supabaseLibraryPromise;
+  }
+  async function getSupabaseBrowserClient() {
+    if (!canUseBrowserAuth()) {
+      throw new Error("Supabase login requires http/https or a deployed Netlify site.");
+    }
+    if (supabaseClientPromise) {
+      return supabaseClientPromise;
+    }
+    supabaseClientPromise = (async () => {
+      const [library, configResult] = await Promise.all([
+        loadSupabaseLibrary(),
+        loadPublicSupabaseConfig()
+      ]);
+      if (!configResult.ok) {
+        if (configResult.status === 404) {
+          throw new Error("Supabase admin functions are not available on this site yet.");
+        }
+        throw new Error(configResult.error || "Supabase public config is unavailable.");
+      }
+      const supabaseUrl = String(configResult.data?.supabaseUrl ?? "").trim();
+      const supabaseAnonKey = String(configResult.data?.supabaseAnonKey ?? "").trim();
+      if (!supabaseUrl || !supabaseAnonKey) {
+        throw new Error("Supabase public config is incomplete.");
+      }
+      return library.createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true
+        }
+      });
+    })();
+    return supabaseClientPromise;
+  }
+
   // js/admin.js
   var TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
   var MAX_EVENT_IMAGE_BYTES = 2 * 1024 * 1024;
@@ -1835,7 +1966,23 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
   ];
   var elements = {
     body: document.body,
+    dashboard: document.querySelector("#admin-dashboard"),
     adminThemeBadge: document.querySelector("#admin-theme-badge"),
+    dashboardActions: document.querySelector("#admin-dashboard-actions"),
+    authSummary: document.querySelector("#admin-auth-summary"),
+    authEmail: document.querySelector("#admin-auth-email"),
+    authRole: document.querySelector("#admin-auth-role"),
+    logoutButton: document.querySelector("#admin-logout-button"),
+    authView: document.querySelector("#admin-auth-view"),
+    authLoading: document.querySelector("#admin-auth-loading"),
+    loginCard: document.querySelector("#admin-login-card"),
+    loginForm: document.querySelector("#admin-login-form"),
+    loginEmail: document.querySelector("#admin-login-email"),
+    loginPassword: document.querySelector("#admin-login-password"),
+    loginStatus: document.querySelector("#admin-login-status"),
+    accessDeniedCard: document.querySelector("#admin-access-denied-card"),
+    accessDeniedMessage: document.querySelector("#admin-access-denied-message"),
+    accessDeniedLogout: document.querySelector("#admin-access-denied-logout"),
     generalStatus: document.querySelector("#admin-general-status"),
     adminStatusNote: document.querySelector("#status-panel-note"),
     dangerStatus: document.querySelector("#danger-status"),
@@ -1918,7 +2065,16 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     archivedPrayerTimesList: document.querySelector("#archived-prayer-times-list"),
     archivedEventsList: document.querySelector("#archived-events-list"),
     archivedPrayerCount: document.querySelector("#archived-prayer-count"),
-    archivedEventCount: document.querySelector("#archived-event-count")
+    archivedEventCount: document.querySelector("#archived-event-count"),
+    superAdminPanel: document.querySelector("#super-admin-panel"),
+    adminUserForm: document.querySelector("#admin-user-form"),
+    adminUserEmail: document.querySelector("#admin-user-email"),
+    adminUserPassword: document.querySelector("#admin-user-password"),
+    adminUserRole: document.querySelector("#admin-user-role"),
+    refreshAdminUsers: document.querySelector("#refresh-admin-users"),
+    adminUsersStatus: document.querySelector("#admin-users-status"),
+    adminUsersCount: document.querySelector("#admin-users-count"),
+    adminUsersList: document.querySelector("#admin-users-list")
   };
   var state = {
     previewRows: [],
@@ -1933,7 +2089,16 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     remotePrayerTimes: [],
     remoteEvents: [],
     archivedPrayerTimes: [],
-    archivedEvents: []
+    archivedEvents: [],
+    dashboardInitialized: false,
+    authClient: null,
+    authSession: null,
+    adminProfile: null,
+    adminUsers: [],
+    authResolved: false,
+    authBusy: false,
+    pendingLogoutMessage: "",
+    pendingLogoutTone: "success"
   };
   function setText(element, value) {
     if (element) {
@@ -1949,6 +2114,252 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     if (tone) {
       element.classList.add(`is-${tone}`);
     }
+  }
+  function getRoleLabel(role) {
+    return role === "super_admin" ? "Super admin" : "Admin";
+  }
+  function getRoleLabelArabic(role) {
+    return role === "super_admin" ? "\u0627\u0644\u0645\u0634\u0631\u0641 \u0627\u0644\u0623\u0639\u0644\u0649" : "\u0625\u062F\u0627\u0631\u064A";
+  }
+  function canManageAdminAccounts() {
+    return state.adminProfile?.role === "super_admin";
+  }
+  function getCurrentAccessToken() {
+    return state.authSession?.access_token ?? "";
+  }
+  function syncRemoteAuthProvider() {
+    setRemoteAuthTokenProvider(() => getCurrentAccessToken());
+  }
+  function renderAdminSummaryReset() {
+    setText(elements.authEmail, "\u2014");
+    setText(elements.authRole, "\u2014");
+    elements.body.dataset.adminRole = "";
+    elements.superAdminPanel.hidden = true;
+    state.adminUsers = [];
+    renderAdminUsers();
+  }
+  function setAuthView(screen) {
+    const isDashboard = screen === "dashboard";
+    elements.authView.hidden = isDashboard;
+    elements.authLoading.hidden = screen !== "loading";
+    elements.loginCard.hidden = screen !== "login";
+    elements.accessDeniedCard.hidden = screen !== "denied";
+    elements.dashboard.hidden = !isDashboard;
+    elements.dashboardActions.hidden = !isDashboard;
+    elements.authSummary.hidden = !isDashboard;
+  }
+  function renderAuthSummary() {
+    const email = state.adminProfile?.email || state.authSession?.user?.email || "\u2014";
+    const role = state.adminProfile?.role || "";
+    setText(elements.authEmail, email);
+    setText(elements.authRole, role ? `${getRoleLabel(role)} / ${getRoleLabelArabic(role)}` : "\u2014");
+    elements.body.dataset.adminRole = role || "";
+    elements.superAdminPanel.hidden = !canManageAdminAccounts();
+  }
+  function showAuthLoading(message = "Verifying Supabase session and admin permissions.") {
+    setAuthView("loading");
+    const description = elements.authLoading.querySelector(".auth-copy");
+    setText(description, message);
+  }
+  function showLoginScreen(message = "Enter your admin email and password to continue.", tone = "") {
+    state.adminProfile = null;
+    renderAdminSummaryReset();
+    setAuthView("login");
+    setStatus(elements.loginStatus, message, tone);
+  }
+  function showAccessDenied(message) {
+    state.adminProfile = null;
+    renderAdminSummaryReset();
+    setAuthView("denied");
+    setText(elements.accessDeniedMessage, message);
+  }
+  async function ensureAuthClient() {
+    if (state.authClient) {
+      return state.authClient;
+    }
+    state.authClient = await getSupabaseBrowserClient();
+    return state.authClient;
+  }
+  function getAuthFailureMessage(result, fallbackMessage) {
+    if (result?.status === 401) {
+      return "Invalid login or expired session.";
+    }
+    if (result?.status === 403) {
+      return String(result?.data?.error ?? result?.error ?? fallbackMessage);
+    }
+    return getRemoteFailureMessage(result, fallbackMessage);
+  }
+  async function handleRemoteAccessFailure(result) {
+    if (result?.status !== 401 && result?.status !== 403) {
+      return false;
+    }
+    await signOutAdmin("Your session expired or admin access was removed. Please log in again.", "warning");
+    return true;
+  }
+  async function loadCurrentAdminProfile() {
+    const profileResult = await loadAuthProfile();
+    if (!profileResult.ok) {
+      return profileResult;
+    }
+    state.adminProfile = profileResult.data?.profile ?? null;
+    renderAuthSummary();
+    return profileResult;
+  }
+  async function refreshAdminUsers() {
+    if (!canManageAdminAccounts()) {
+      state.adminUsers = [];
+      renderAdminUsers();
+      return null;
+    }
+    const result = await loadAdminUsersFromRemote();
+    if (!result.ok) {
+      setStatus(elements.adminUsersStatus, getRemoteFailureMessage(result, "Could not load admin accounts."), "error");
+      renderAdminUsers();
+      return result;
+    }
+    state.adminUsers = Array.isArray(result.data?.items) ? result.data.items : [];
+    renderAdminUsers();
+    setStatus(elements.adminUsersStatus, "Admin accounts loaded.", "success");
+    return result;
+  }
+  function renderAdminUsers() {
+    if (!elements.adminUsersList || !elements.adminUsersCount) {
+      return;
+    }
+    const users = Array.isArray(state.adminUsers) ? state.adminUsers : [];
+    setText(elements.adminUsersCount, `${users.length} account${users.length === 1 ? "" : "s"}`);
+    if (!canManageAdminAccounts()) {
+      elements.adminUsersList.innerHTML = `
+      <div class="saved-events-empty">
+        Admin account management is available only to super admins.
+      </div>
+    `;
+      return;
+    }
+    if (users.length === 0) {
+      elements.adminUsersList.innerHTML = `
+      <div class="saved-events-empty">
+        No admin accounts loaded yet.
+      </div>
+    `;
+      return;
+    }
+    elements.adminUsersList.innerHTML = users.map((user) => {
+      const isCurrentUser = user.id === state.adminProfile?.id;
+      const activeLabel = user.active ? "Active" : "Disabled";
+      return `
+      <article class="admin-user-card">
+        <div class="admin-user-copy">
+          <h4>${escapeHtml(user.email)}</h4>
+          <div class="admin-user-badges">
+            <span class="saved-event-status ${user.active ? "is-active" : "is-inactive"}">${activeLabel}</span>
+            <span>${escapeHtml(getRoleLabel(user.role))}</span>
+            ${isCurrentUser ? "<span>You</span>" : ""}
+          </div>
+          <p class="admin-user-meta">
+            Updated: ${escapeHtml(user.updatedAt ? new Date(user.updatedAt).toLocaleString() : "\u2014")}
+          </p>
+        </div>
+        <div class="admin-user-controls">
+          <label class="admin-field">
+            <span class="admin-label">Role</span>
+            <select class="admin-role-select" data-role-select="${escapeHtml(user.id)}">
+              <option value="admin" ${user.role === "admin" ? "selected" : ""}>Admin</option>
+              <option value="super_admin" ${user.role === "super_admin" ? "selected" : ""}>Super admin</option>
+            </select>
+          </label>
+          <div class="button-row admin-user-action-row">
+            <button type="button" class="button-secondary" data-admin-action="save-role" data-user-id="${escapeHtml(user.id)}">
+              Save role
+            </button>
+            <button type="button" class="button-warning" data-admin-action="disable" data-user-id="${escapeHtml(user.id)}" ${user.active ? "" : "disabled"}>
+              ${user.active ? "Disable" : "Disabled"}
+            </button>
+            <button type="button" class="button-danger" data-admin-action="delete" data-user-id="${escapeHtml(user.id)}" ${user.active ? "disabled" : ""}>
+              Delete
+            </button>
+          </div>
+        </div>
+      </article>
+    `;
+    }).join("");
+  }
+  function getSelectedRoleForUser(userId) {
+    const selector = `[data-role-select="${CSS.escape(userId)}"]`;
+    const select = elements.adminUsersList.querySelector(selector);
+    return select instanceof HTMLSelectElement ? select.value : "";
+  }
+  async function activateAuthenticatedDashboard() {
+    renderAuthSummary();
+    setAuthView("dashboard");
+    await refreshSupabaseConnectionState();
+    if (canManageAdminAccounts()) {
+      await refreshAdminUsers();
+    } else {
+      state.adminUsers = [];
+      renderAdminUsers();
+    }
+  }
+  async function resolveAdminAccess() {
+    if (state.authBusy) {
+      return;
+    }
+    state.authBusy = true;
+    showAuthLoading();
+    try {
+      const client = await ensureAuthClient();
+      const { data, error } = await client.auth.getSession();
+      if (error) {
+        showLoginScreen("Supabase session could not be restored. Please log in again.", "warning");
+        return;
+      }
+      state.authSession = data.session ?? null;
+      syncRemoteAuthProvider();
+      if (!state.authSession?.access_token) {
+        showLoginScreen();
+        return;
+      }
+      const profileResult = await loadCurrentAdminProfile();
+      if (!profileResult.ok) {
+        if (profileResult.status === 401) {
+          await client.auth.signOut();
+          state.authSession = null;
+          syncRemoteAuthProvider();
+          showLoginScreen("Your session expired. Please log in again.", "warning");
+          return;
+        }
+        if (profileResult.status === 403) {
+          showAccessDenied(String(profileResult.data?.error ?? "This account does not have admin access."));
+          return;
+        }
+        showLoginScreen(getAuthFailureMessage(profileResult, "Supabase unavailable."), "error");
+        return;
+      }
+      await activateAuthenticatedDashboard();
+    } catch (error) {
+      showLoginScreen(error.message || "Supabase unavailable.", "error");
+    } finally {
+      state.authResolved = true;
+      state.authBusy = false;
+    }
+  }
+  async function signOutAdmin(message = "Signed out successfully.", tone = "success") {
+    state.pendingLogoutMessage = message;
+    state.pendingLogoutTone = tone;
+    try {
+      const client = await ensureAuthClient();
+      await client.auth.signOut();
+    } catch (_error) {
+    }
+    state.authSession = null;
+    state.adminProfile = null;
+    state.adminUsers = [];
+    state.supabaseConnected = false;
+    state.supabaseChecked = false;
+    state.remoteAdminDataLoaded = false;
+    syncRemoteAuthProvider();
+    renderAdminSummaryReset();
+    showLoginScreen(message, tone);
   }
   function prettyJson(value) {
     return JSON.stringify(value, null, 2);
@@ -2085,6 +2496,10 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     ]);
     const failure = [activePrayerResult, activeEventResult, archivedPrayerResult, archivedEventResult].find((result) => !result.ok) ?? null;
     if (failure) {
+      if (await handleRemoteAccessFailure(failure)) {
+        return null;
+      }
+      state.supabaseConnected = false;
       state.remoteAdminDataLoaded = false;
       setStatus(
         elements.archivedStatus,
@@ -2117,6 +2532,15 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     };
   }
   async function refreshSupabaseConnectionState() {
+    if (!state.authSession?.access_token || !state.adminProfile) {
+      state.supabaseConnected = false;
+      state.supabaseChecked = true;
+      return {
+        connected: false,
+        message: "Admin login is required before Supabase admin tools can load.",
+        detail: "authentication required"
+      };
+    }
     const result = await checkSupabaseConnection();
     state.supabaseConnected = result.connected;
     state.supabaseChecked = true;
@@ -2135,6 +2559,9 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
   }
   async function syncPrayerTimesWithRemote(entries) {
     const result = await savePrayerTimesRemotely(entries);
+    if (await handleRemoteAccessFailure(result)) {
+      return result;
+    }
     state.supabaseConnected = result.ok;
     state.supabaseChecked = true;
     if (result.ok) {
@@ -2146,6 +2573,9 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
   }
   async function syncEventWithRemote(event) {
     const result = await saveEventRemotely(event);
+    if (await handleRemoteAccessFailure(result)) {
+      return result;
+    }
     state.supabaseConnected = result.ok;
     state.supabaseChecked = true;
     if (result.ok) {
@@ -2168,6 +2598,9 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     }
     const results = await Promise.all(events.map((item) => saveEventRemotely(item)));
     const failedResult = results.find((result) => !result.ok) ?? null;
+    if (await handleRemoteAccessFailure(failedResult)) {
+      return failedResult;
+    }
     const allSkipped = results.every((result) => result.skipped);
     state.supabaseConnected = !failedResult && !allSkipped;
     state.supabaseChecked = true;
@@ -2198,6 +2631,9 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
   }
   async function syncEventArchiveWithRemote(eventId) {
     const result = await archiveEventRemotely(eventId);
+    if (await handleRemoteAccessFailure(result)) {
+      return result;
+    }
     state.supabaseConnected = result.ok;
     state.supabaseChecked = true;
     if (result.ok) {
@@ -3383,6 +3819,9 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     const localResult = action === "restore" ? setPrayerArchivedLocally(payload, false) : permanentlyDeletePrayerEntriesLocally(payload);
     if (state.supabaseConnected) {
       const remoteResult = action === "restore" ? await restorePrayerTimesRemotely(payload) : await permanentlyDeletePrayerTimesRemotely(payload);
+      if (await handleRemoteAccessFailure(remoteResult)) {
+        return;
+      }
       if (remoteResult.ok) {
         await refreshRemoteAdminData({ hydrateEditors: true });
         setStatus(elements.archivedStatus, successMessage, "success");
@@ -3410,6 +3849,9 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     const localResult = action === "restore" ? setEventArchived(eventId, false, baseEvents) : deleteEvent(eventId, baseEvents);
     if (state.supabaseConnected) {
       const remoteResult = action === "restore" ? await restoreEventRemotely(eventId) : await permanentlyDeleteEventRemotely(eventId);
+      if (await handleRemoteAccessFailure(remoteResult)) {
+        return;
+      }
       if (remoteResult.ok) {
         await refreshRemoteAdminData({ hydrateEditors: true });
         setStatus(
@@ -3543,7 +3985,131 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
       await handleArchivedEventAction("delete", eventId);
     }
   }
+  async function handleAdminLoginSubmit(event) {
+    event.preventDefault();
+    const email = String(elements.loginEmail.value ?? "").trim();
+    const password = String(elements.loginPassword.value ?? "");
+    if (!email || !password) {
+      setStatus(elements.loginStatus, "Please enter both email and password.", "error");
+      return;
+    }
+    showAuthLoading("Signing in to Supabase...");
+    try {
+      const client = await ensureAuthClient();
+      const { error } = await client.auth.signInWithPassword({ email, password });
+      if (error) {
+        showLoginScreen("Invalid login. Please check the email and password.", "error");
+        return;
+      }
+      elements.loginPassword.value = "";
+      await resolveAdminAccess();
+    } catch (error) {
+      showLoginScreen(error.message || "Supabase unavailable.", "error");
+    }
+  }
+  async function handleAdminUserFormSubmit(event) {
+    event.preventDefault();
+    const payload = {
+      email: String(elements.adminUserEmail.value ?? "").trim(),
+      password: String(elements.adminUserPassword.value ?? ""),
+      role: String(elements.adminUserRole.value ?? "admin").trim()
+    };
+    if (!payload.email || !payload.password) {
+      setStatus(elements.adminUsersStatus, "Enter both email and password for the new admin account.", "error");
+      return;
+    }
+    setStatus(elements.adminUsersStatus, "Creating admin account...", "warning");
+    const result = await createAdminUserRemotely(payload);
+    if (!result.ok) {
+      setStatus(elements.adminUsersStatus, getRemoteFailureMessage(result, "Could not create the admin account."), "error");
+      if (result.status === 401 || result.status === 403) {
+        await resolveAdminAccess();
+      }
+      return;
+    }
+    elements.adminUserForm.reset();
+    elements.adminUserRole.value = "admin";
+    setStatus(elements.adminUsersStatus, result.data?.message || "Admin account created.", "success");
+    await refreshAdminUsers();
+  }
+  async function handleAdminUsersListAction(event) {
+    const target = event.target;
+    if (!(target instanceof HTMLButtonElement)) {
+      return;
+    }
+    const action = target.dataset.adminAction;
+    const userId = target.dataset.userId;
+    if (!action || !userId) {
+      return;
+    }
+    if (action === "save-role") {
+      const role = getSelectedRoleForUser(userId);
+      setStatus(elements.adminUsersStatus, "Saving admin role...", "warning");
+      const result = await updateAdminUserRoleRemotely({ id: userId, role });
+      if (!result.ok) {
+        setStatus(elements.adminUsersStatus, getRemoteFailureMessage(result, "Could not update the admin role."), "error");
+        if (result.status === 401 || result.status === 403) {
+          await resolveAdminAccess();
+        }
+        return;
+      }
+      setStatus(elements.adminUsersStatus, "Admin role updated.", "success");
+      await resolveAdminAccess();
+      return;
+    }
+    if (action === "disable") {
+      if (!window.confirm("Disable this admin account? They will no longer be able to use /admin.")) {
+        return;
+      }
+      setStatus(elements.adminUsersStatus, "Disabling admin account...", "warning");
+      const result = await disableAdminUserRemotely(userId);
+      if (!result.ok) {
+        setStatus(elements.adminUsersStatus, getRemoteFailureMessage(result, "Could not disable the admin account."), "error");
+        if (result.status === 401 || result.status === 403) {
+          await resolveAdminAccess();
+        }
+        return;
+      }
+      setStatus(elements.adminUsersStatus, "Admin account disabled.", "success");
+      await resolveAdminAccess();
+      return;
+    }
+    if (action === "delete") {
+      if (!window.confirm("Permanently delete this disabled admin account? This cannot be undone.")) {
+        return;
+      }
+      setStatus(elements.adminUsersStatus, "Deleting admin account...", "warning");
+      const result = await deleteAdminUserRemotely(userId, { permanent: true });
+      if (!result.ok) {
+        setStatus(elements.adminUsersStatus, getRemoteFailureMessage(result, "Could not delete the admin account."), "error");
+        if (result.status === 401 || result.status === 403) {
+          await resolveAdminAccess();
+        }
+        return;
+      }
+      setStatus(elements.adminUsersStatus, result.data?.message || "Admin account deleted.", "success");
+      await resolveAdminAccess();
+    }
+  }
   function bindEvents() {
+    elements.loginForm.addEventListener("submit", (event) => {
+      void handleAdminLoginSubmit(event);
+    });
+    elements.logoutButton.addEventListener("click", () => {
+      void signOutAdmin();
+    });
+    elements.accessDeniedLogout.addEventListener("click", () => {
+      void signOutAdmin("Signed out after access denial.", "warning");
+    });
+    elements.adminUserForm.addEventListener("submit", (event) => {
+      void handleAdminUserFormSubmit(event);
+    });
+    elements.refreshAdminUsers.addEventListener("click", () => {
+      void refreshAdminUsers();
+    });
+    elements.adminUsersList.addEventListener("click", (event) => {
+      void handleAdminUsersListAction(event);
+    });
     elements.loadSampleData.addEventListener("click", () => {
       clearImagePreview();
       loadSampleDataIntoEditors();
@@ -3781,9 +4347,39 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     renderPreviewTable();
     renderSavedEvents();
     renderArchivedData();
+    renderAdminUsers();
     resetEventForm({ preserveStatus: true });
     bindEvents();
-    await refreshSupabaseConnectionState();
+    state.dashboardInitialized = true;
+    syncRemoteAuthProvider();
+    try {
+      const client = await ensureAuthClient();
+      client.auth.onAuthStateChange((_event, session) => {
+        state.authSession = session ?? null;
+        syncRemoteAuthProvider();
+        if (!session) {
+          state.adminProfile = null;
+          state.adminUsers = [];
+          state.supabaseConnected = false;
+          state.supabaseChecked = false;
+          state.remoteAdminDataLoaded = false;
+          renderAdminSummaryReset();
+          const logoutMessage = state.pendingLogoutMessage || "Please log in to continue.";
+          const logoutTone = state.pendingLogoutMessage ? state.pendingLogoutTone : "warning";
+          state.pendingLogoutMessage = "";
+          state.pendingLogoutTone = "success";
+          showLoginScreen(logoutMessage, logoutTone);
+          return;
+        }
+        if (state.authResolved) {
+          void resolveAdminAccess();
+        }
+      });
+    } catch (error) {
+      showLoginScreen(error.message || "Supabase unavailable.", "error");
+      return;
+    }
+    await resolveAdminAccess();
   }
   void initAdmin();
 })();

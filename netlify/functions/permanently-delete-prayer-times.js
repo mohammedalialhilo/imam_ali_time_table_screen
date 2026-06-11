@@ -1,4 +1,4 @@
-const { createSupabaseAdminClient } = require("./_supabase");
+const { requireAdminAccess } = require("./_admin-auth");
 const { isValidDateKey, jsonResponse, parseJsonBody } = require("./_shared");
 
 const MONTH_KEY_PATTERN = /^\d{4}-\d{2}$/;
@@ -39,14 +39,9 @@ exports.handler = async function handler(event) {
     return jsonResponse(405, { error: "Method not allowed. Use POST." });
   }
 
-  let supabase;
-  try {
-    supabase = createSupabaseAdminClient();
-  } catch (error) {
-    return jsonResponse(503, {
-      error: "Supabase admin client is not configured.",
-      details: error.message,
-    });
+  const access = await requireAdminAccess(event);
+  if (!access.ok) {
+    return access.response;
   }
 
   try {
@@ -67,7 +62,7 @@ exports.handler = async function handler(event) {
       });
     }
 
-    let query = supabase
+    let query = access.supabaseAdmin
       .from("prayer_times")
       .delete()
       .eq("archived", true);

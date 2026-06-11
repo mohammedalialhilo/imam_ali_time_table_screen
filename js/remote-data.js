@@ -1,5 +1,7 @@
 import { APP_CONFIG } from "./config.js";
 
+let remoteAuthTokenProvider = null;
+
 function canUseRemoteFunctions() {
   return typeof window !== "undefined"
     && window.location.protocol !== "file:"
@@ -25,6 +27,10 @@ function buildQueryString(params = {}) {
   return query ? `?${query}` : "";
 }
 
+export function setRemoteAuthTokenProvider(provider) {
+  remoteAuthTokenProvider = typeof provider === "function" ? provider : null;
+}
+
 async function requestJson(url, options = {}) {
   if (!canUseRemoteFunctions()) {
     return {
@@ -36,17 +42,25 @@ async function requestJson(url, options = {}) {
     };
   }
 
+  const headers = buildJsonHeaders(options.headers);
+  if (remoteAuthTokenProvider) {
+    const token = await remoteAuthTokenProvider();
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+  }
+
   const requestOptions = {
     cache: "no-store",
     ...options,
-    headers: buildJsonHeaders(options.headers),
+    headers,
   };
 
   if (options.body && typeof options.body !== "string") {
     requestOptions.body = JSON.stringify(options.body);
     requestOptions.headers = buildJsonHeaders({
       "Content-Type": "application/json",
-      ...options.headers,
+      ...headers,
     });
   }
 
@@ -83,6 +97,14 @@ export function getRemoteFailureMessage(result, fallbackMessage = APP_CONFIG.syn
     return APP_CONFIG.syncMessages.localOnly;
   }
 
+  if (result?.status === 401) {
+    return "Your admin session is missing or has expired. Please log in again.";
+  }
+
+  if (result?.status === 403) {
+    return "You do not have permission to perform this action.";
+  }
+
   if (result?.status === 503) {
     return APP_CONFIG.syncMessages.saveError;
   }
@@ -92,6 +114,14 @@ export function getRemoteFailureMessage(result, fallbackMessage = APP_CONFIG.syn
   }
 
   return fallbackMessage;
+}
+
+export async function loadPublicSupabaseConfig() {
+  return requestJson(APP_CONFIG.apiPaths.publicSupabaseConfig);
+}
+
+export async function loadAuthProfile() {
+  return requestJson(APP_CONFIG.apiPaths.authGetProfile);
 }
 
 export async function loadPrayerTimesFromRemote(dateKey) {
@@ -163,6 +193,41 @@ export async function permanentlyDeletePrayerTimesRemotely(payload) {
   return requestJson(APP_CONFIG.apiPaths.permanentlyDeletePrayerTimes, {
     method: "POST",
     body: { ...payload, confirm: true },
+  });
+}
+
+export async function loadAdminUsersFromRemote() {
+  return requestJson(APP_CONFIG.apiPaths.adminListUsers);
+}
+
+export async function createAdminUserRemotely(payload) {
+  return requestJson(APP_CONFIG.apiPaths.adminCreateUser, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateAdminUserRoleRemotely(payload) {
+  return requestJson(APP_CONFIG.apiPaths.adminUpdateUserRole, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function disableAdminUserRemotely(userId) {
+  return requestJson(APP_CONFIG.apiPaths.adminDisableUser, {
+    method: "POST",
+    body: { id: userId },
+  });
+}
+
+export async function deleteAdminUserRemotely(userId, options = {}) {
+  return requestJson(APP_CONFIG.apiPaths.adminDeleteUser, {
+    method: "POST",
+    body: {
+      id: userId,
+      permanent: options.permanent === true,
+    },
   });
 }
 

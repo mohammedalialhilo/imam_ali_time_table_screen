@@ -1,4 +1,4 @@
-const { createSupabaseAdminClient } = require("./_supabase");
+const { requireAdminAccess } = require("./_admin-auth");
 const {
   fromEventDbRow,
   jsonResponse,
@@ -13,14 +13,9 @@ exports.handler = async function handler(event) {
     return jsonResponse(405, { error: "Method not allowed. Use POST." });
   }
 
-  let supabase;
-  try {
-    supabase = createSupabaseAdminClient();
-  } catch (error) {
-    return jsonResponse(503, {
-      error: "Supabase admin client is not configured.",
-      details: error.message,
-    });
+  const access = await requireAdminAccess(event);
+  if (!access.ok) {
+    return access.response;
   }
 
   try {
@@ -37,7 +32,7 @@ exports.handler = async function handler(event) {
 
     let existingRow = null;
     if (normalized.id) {
-      const { data: currentData, error: currentError } = await supabase
+      const { data: currentData, error: currentError } = await access.supabaseAdmin
         .from("events")
         .select("id, created_at")
         .eq("id", normalized.id)
@@ -54,7 +49,7 @@ exports.handler = async function handler(event) {
     }
 
     const dbRow = toEventDbRow(normalized, existingRow ?? {}, { archived: false });
-    const { data, error } = await supabase
+    const { data, error } = await access.supabaseAdmin
       .from("events")
       .upsert(dbRow, { onConflict: "id" })
       .select("*")

@@ -22,22 +22,89 @@
             Update prayer times, events and theme for the mosque display.
           </p>
           <p class="admin-copy admin-copy-secondary">
-            When Supabase is connected, prayer-time and event changes can sync to deployed mosque screens.
-            If Supabase is unavailable, the admin page falls back to this browser only.
+            This page requires Supabase login. When connected, prayer-time and event changes can sync to deployed
+            mosque screens. If a save request fails after login, the local browser copy is kept as a fallback.
           </p>
         </div>
         <div class="admin-header-actions">
           <a class="button-link" href="index.html" target="_blank" rel="noopener">Open display page</a>
-          <button type="button" id="load-sample-data">Load sample data</button>
-          <span id="admin-theme-badge" class="info-pill">Teal</span>
+          <div id="admin-auth-summary" class="admin-auth-summary" hidden>
+            <p id="admin-auth-email" class="admin-auth-line">—</p>
+            <p id="admin-auth-role" class="admin-auth-line admin-auth-role">—</p>
+            <button type="button" id="admin-logout-button" class="button-secondary">
+              Logout / <span class="arabic">تسجيل الخروج</span>
+            </button>
+          </div>
+          <div id="admin-dashboard-actions" class="admin-dashboard-actions" hidden>
+            <button type="button" id="load-sample-data">Load sample data</button>
+            <span id="admin-theme-badge" class="info-pill">Teal</span>
+          </div>
         </div>
       </header>
 
-      <p id="admin-general-status" class="status-line admin-general-status">
-        Ready. Upload a timetable image or paste timetable text, then review the preview before saving.
-      </p>
+      <section id="admin-auth-view" class="admin-auth-view" aria-live="polite">
+        <article id="admin-auth-loading" class="panel auth-card">
+          <h2>Checking admin access</h2>
+          <p class="auth-copy">
+            Verifying Supabase session and admin permissions.
+          </p>
+        </article>
 
-      <section class="admin-status-grid" aria-label="Quick status">
+        <article id="admin-login-card" class="panel auth-card" hidden>
+          <div class="admin-panel-heading">
+            <div>
+              <h2>Login / <span class="arabic">تسجيل الدخول</span></h2>
+              <p class="admin-helper">
+                Sign in with your mosque admin email and password to manage prayer times, events, and display content.
+              </p>
+            </div>
+          </div>
+          <form id="admin-login-form" class="auth-form" novalidate>
+            <label class="admin-field">
+              <span class="admin-label">Email</span>
+              <input id="admin-login-email" type="email" inputmode="email" autocomplete="username" placeholder="admin@example.com">
+            </label>
+            <label class="admin-field">
+              <span class="admin-label">Password / <span class="arabic">كلمة المرور</span></span>
+              <input id="admin-login-password" type="password" autocomplete="current-password" placeholder="Password">
+            </label>
+            <div class="button-row">
+              <button type="submit" class="button-accent">
+                Login / <span class="arabic">تسجيل الدخول</span>
+              </button>
+            </div>
+          </form>
+          <p id="admin-login-status" class="status-line">
+            Enter your admin email and password to continue.
+          </p>
+        </article>
+
+        <article id="admin-access-denied-card" class="panel auth-card" hidden>
+          <div class="admin-panel-heading">
+            <div>
+              <h2>Access denied / <span class="arabic">تم رفض الوصول</span></h2>
+              <p class="admin-helper">
+                This account is not allowed to use the mosque admin panel.
+              </p>
+            </div>
+          </div>
+          <p id="admin-access-denied-message" class="auth-copy">
+            No active admin profile was found for this account.
+          </p>
+          <div class="button-row">
+            <button type="button" id="admin-access-denied-logout" class="button-secondary">
+              Logout / <span class="arabic">تسجيل الخروج</span>
+            </button>
+          </div>
+        </article>
+      </section>
+
+      <div id="admin-dashboard" hidden>
+        <p id="admin-general-status" class="status-line admin-general-status">
+          Ready. Upload a timetable image or paste timetable text, then review the preview before saving.
+        </p>
+
+        <section class="admin-status-grid" aria-label="Quick status">
         <article class="status-card panel">
           <p class="status-card-label">Current theme</p>
           <p id="status-current-theme" class="status-card-value">Teal</p>
@@ -62,9 +129,9 @@
           <p class="status-card-label">Display data source</p>
           <p id="status-data-source" class="status-card-value">Sample data</p>
         </article>
-      </section>
+        </section>
 
-      <section class="admin-workspace">
+        <section class="admin-workspace">
         <div class="admin-column admin-primary">
           <article class="panel admin-panel prayer-import-panel">
             <div class="admin-panel-heading">
@@ -448,6 +515,64 @@
         </div>
 
         <aside class="admin-column admin-secondary">
+          <article id="super-admin-panel" class="panel admin-panel super-admin-panel" hidden>
+            <div class="admin-panel-heading">
+              <div>
+                <h2>Admin accounts / <span class="arabic">حسابات الإدارة</span></h2>
+                <p class="admin-helper">
+                  Super admins can create, update, disable, and remove admin accounts.
+                </p>
+              </div>
+            </div>
+
+            <form id="admin-user-form" class="admin-user-form" novalidate>
+              <div class="event-form-columns">
+                <label class="admin-field">
+                  <span class="admin-label">Admin email</span>
+                  <input id="admin-user-email" type="email" inputmode="email" autocomplete="off" placeholder="new-admin@example.com">
+                </label>
+                <label class="admin-field">
+                  <span class="admin-label">Temporary password</span>
+                  <input id="admin-user-password" type="password" autocomplete="new-password" placeholder="At least 8 characters">
+                </label>
+              </div>
+              <div class="event-form-columns">
+                <label class="admin-field">
+                  <span class="admin-label">Role</span>
+                  <select id="admin-user-role">
+                    <option value="admin">Admin</option>
+                    <option value="super_admin">Super admin</option>
+                  </select>
+                </label>
+              </div>
+              <div class="button-row">
+                <button type="submit" class="button-accent">Create admin account</button>
+                <button type="button" id="refresh-admin-users" class="button-secondary">Refresh admin list</button>
+              </div>
+            </form>
+
+            <p id="admin-users-status" class="status-line">
+              Super admin tools are ready.
+            </p>
+
+            <section class="saved-events-section">
+              <div class="admin-panel-heading compact-heading">
+                <div>
+                  <h3>Existing admin accounts</h3>
+                  <p class="admin-helper">
+                    Role changes and account disable/delete actions are enforced by Netlify Functions.
+                  </p>
+                </div>
+                <span id="admin-users-count" class="info-pill">0 accounts</span>
+              </div>
+              <div id="admin-users-list" class="admin-users-list">
+                <div class="saved-events-empty">
+                  No admin accounts loaded yet.
+                </div>
+              </div>
+            </section>
+          </article>
+
           <article class="panel admin-panel">
             <div class="admin-panel-heading">
               <div>
@@ -563,7 +688,8 @@
             </p>
           </article>
         </aside>
-      </section>
+        </section>
+      </div>
     </main>
 
     <script>

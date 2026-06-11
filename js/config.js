@@ -117,6 +117,13 @@ export const APP_CONFIG = {
     events: "data/events.sample.json",
   },
   apiPaths: {
+    publicSupabaseConfig: "/.netlify/functions/public-supabase-config",
+    authGetProfile: "/.netlify/functions/auth-get-profile",
+    adminListUsers: "/.netlify/functions/admin-list-users",
+    adminCreateUser: "/.netlify/functions/admin-create-user",
+    adminUpdateUserRole: "/.netlify/functions/admin-update-user-role",
+    adminDisableUser: "/.netlify/functions/admin-disable-user",
+    adminDeleteUser: "/.netlify/functions/admin-delete-user",
     todayPrayerTimes: "/.netlify/functions/get-today-prayer-times",
     upcomingEvent: "/.netlify/functions/get-upcoming-event",
     adminPrayerTimes: "/.netlify/functions/get-admin-prayer-times",

@@ -1,4 +1,4 @@
-const { createSupabaseAdminClient } = require("./_supabase");
+const { requireAdminAccess } = require("./_admin-auth");
 const {
   fromPrayerDbRow,
   jsonResponse,
@@ -14,14 +14,9 @@ exports.handler = async function handler(event) {
     return jsonResponse(405, { error: "Method not allowed. Use POST." });
   }
 
-  let supabase;
-  try {
-    supabase = createSupabaseAdminClient();
-  } catch (error) {
-    return jsonResponse(503, {
-      error: "Supabase admin client is not configured.",
-      details: error.message,
-    });
+  const access = await requireAdminAccess(event);
+  if (!access.ok) {
+    return access.response;
   }
 
   try {
@@ -42,7 +37,7 @@ exports.handler = async function handler(event) {
       });
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await access.supabaseAdmin
       .from("prayer_times")
       .upsert(validation.items.map((row) => toPrayerDbRow(row, { archived: false })), { onConflict: "date" })
       .select("*");

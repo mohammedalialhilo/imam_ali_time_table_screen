@@ -1,4 +1,4 @@
-const { createSupabaseAdminClient } = require("./_supabase");
+const { requireAdminAccess } = require("./_admin-auth");
 const { jsonResponse, normalizeEventRow, parseJsonBody } = require("./_shared");
 
 exports.handler = async function handler(event) {
@@ -6,14 +6,9 @@ exports.handler = async function handler(event) {
     return jsonResponse(405, { error: "Method not allowed. Use POST." });
   }
 
-  let supabase;
-  try {
-    supabase = createSupabaseAdminClient();
-  } catch (error) {
-    return jsonResponse(503, {
-      error: "Supabase admin client is not configured.",
-      details: error.message,
-    });
+  const access = await requireAdminAccess(event);
+  if (!access.ok) {
+    return access.response;
   }
 
   try {
@@ -34,7 +29,7 @@ exports.handler = async function handler(event) {
       });
     }
 
-    const { data: existing, error: existingError } = await supabase
+    const { data: existing, error: existingError } = await access.supabaseAdmin
       .from("events")
       .select("id, archived")
       .eq("id", eventId)
@@ -59,7 +54,7 @@ exports.handler = async function handler(event) {
       });
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await access.supabaseAdmin
       .from("events")
       .delete()
       .eq("id", eventId)

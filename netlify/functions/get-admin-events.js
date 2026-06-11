@@ -1,4 +1,4 @@
-const { createSupabaseAdminClient } = require("./_supabase");
+const { requireAdminAccess } = require("./_admin-auth");
 const { fromEventDbRow, jsonResponse, sortEventRows } = require("./_shared");
 
 function parseArchivedFilter(event) {
@@ -17,19 +17,14 @@ exports.handler = async function handler(event) {
     return jsonResponse(405, { error: "Method not allowed. Use GET." });
   }
 
-  let supabase;
-  try {
-    supabase = createSupabaseAdminClient();
-  } catch (error) {
-    return jsonResponse(503, {
-      error: "Supabase admin client is not configured.",
-      details: error.message,
-    });
+  const access = await requireAdminAccess(event);
+  if (!access.ok) {
+    return access.response;
   }
 
   try {
     const archivedFilter = parseArchivedFilter(event);
-    let query = supabase
+    let query = access.supabaseAdmin
       .from("events")
       .select("*")
       .order("event_date", { ascending: true })

@@ -70,8 +70,50 @@ body[data-page="admin"]::after {
   align-content: start;
 }
 
+.admin-auth-summary,
+.admin-dashboard-actions {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.admin-auth-line {
+  margin: 0;
+  color: var(--text-primary);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.admin-auth-role {
+  color: var(--accent);
+}
+
 .admin-header-actions .info-pill {
   justify-self: start;
+}
+
+.admin-auth-view {
+  width: min(100%, 42rem);
+  margin: 1rem auto 0;
+}
+
+.auth-card {
+  padding: 1.2rem;
+}
+
+.auth-card h2 {
+  margin: 0;
+}
+
+.auth-copy {
+  margin: 0.6rem 0 0;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.auth-form {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1rem;
 }
 
 .admin-general-status {
@@ -552,6 +594,73 @@ body[data-page="admin"]::after {
   padding-inline: 0.95rem;
 }
 
+.admin-users-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.admin-user-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(16rem, 0.9fr);
+  gap: 0.9rem;
+  padding: 0.95rem;
+  border-radius: 1rem;
+  border: 1px solid rgb(var(--accent-rgb) / 0.16);
+  background: rgb(255 255 255 / 0.03);
+}
+
+.admin-user-copy,
+.admin-user-controls {
+  min-width: 0;
+}
+
+.admin-user-copy h4,
+.admin-user-copy p {
+  margin: 0;
+}
+
+.admin-user-badges {
+  margin-top: 0.55rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.admin-user-badges span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--accent-rgb) / 0.16);
+  background: rgb(255 255 255 / 0.03);
+  color: var(--text-muted);
+  font-size: 0.84rem;
+}
+
+.admin-user-meta {
+  margin-top: 0.55rem;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.admin-user-controls {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.admin-role-select {
+  width: 100%;
+}
+
+.admin-user-action-row {
+  flex-wrap: wrap;
+}
+
+.admin-user-action-row button {
+  flex: 1 1 9rem;
+}
+
 .button-warning {
   background: rgb(236 179 38 / 0.16);
   border-color: rgb(236 179 38 / 0.3);
@@ -1010,6 +1119,10 @@ body[data-page="admin"]::after {
   }
 
   .event-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-user-card {
     grid-template-columns: 1fr;
   }
 
