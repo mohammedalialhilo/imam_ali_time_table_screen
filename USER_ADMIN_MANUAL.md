@@ -54,6 +54,16 @@ Important:
 - prayer times and events can sync through Supabase
 - theme selection is still local to the browser/device for now
 
+## Automatic archive behavior
+
+When Supabase is connected, old display data can be archived automatically.
+
+- prayer times from previous months are archived after the month has passed
+- events are archived 7 days after the event date and time
+- archived data does not appear on the public display
+- archived data can be restored from the admin page
+- permanent deletion is only available inside the archived-data section
+
 ## How to open the display screen
 
 1. Open `index.html` or `/display`.
@@ -248,12 +258,14 @@ Recommended image ratios:
 3. Update the fields.
 4. Click **Update event / تحديث الفعالية**.
 
-## How to delete an event
+## How to archive an active event
 
 1. Open `/admin`.
 2. Find the event in **Saved events**.
-3. Click **Delete**.
-4. Confirm the deletion.
+3. Click **Archive**.
+4. Confirm the archive action.
+
+The event is removed from the public display, but it can still be restored later.
 
 ## How to duplicate an event
 
@@ -268,6 +280,50 @@ Recommended image ratios:
 2. In **Saved events**, click **Hide** or **Show**.
 
 Inactive events stay saved but do not appear on the public display.
+
+## How to view archived data
+
+1. Open `/admin`.
+2. Go to **Archived data**.
+3. Click **Show archived prayer times** or **Show archived events**.
+4. Review the archived items before restoring or deleting anything.
+
+## How to restore archived prayer times
+
+1. Open `/admin`.
+2. Go to **Archived data**.
+3. Open **Archived prayer times**.
+4. Click **Restore** for one day, or **Restore month** for a whole archived month.
+5. Open `/display` and confirm the data appears again.
+
+## How to restore an archived event
+
+1. Open `/admin`.
+2. Go to **Archived data**.
+3. Open **Archived events**.
+4. Click **Restore event**.
+5. Open `/display` and confirm the event appears again if it is still active and relevant.
+
+## How to permanently delete archived data
+
+Use this only when you are sure the archived data is no longer needed.
+
+Prayer times:
+
+1. Open **Archived prayer times**.
+2. Click **Delete** for one archived day, or **Delete month** for a full archived month.
+3. Confirm the warning.
+
+Events:
+
+1. Open **Archived events**.
+2. Click **Delete forever**.
+3. Confirm the warning.
+
+Important:
+
+- permanent delete cannot be undone
+- permanent delete is only available from the archived-data section
 
 ## Advanced: entering event JSON manually
 
@@ -340,9 +396,10 @@ After saving:
 1. Open `/admin`.
 2. Check the first and last saved dates.
 3. Confirm today's date is included.
-4. If not, import the correct timetable month.
-5. Save again.
-6. Refresh the display page.
+4. If today's month was archived by mistake, restore it from **Archived prayer times**.
+5. If the month does not exist yet, import the correct timetable month.
+6. Save again.
+7. Refresh the display page.
 
 ## What to do if the screen looks wrong
 

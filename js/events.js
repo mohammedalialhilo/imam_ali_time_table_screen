@@ -145,6 +145,28 @@ function normalizeActiveValue(value) {
   return value == null ? true : Boolean(value);
 }
 
+function normalizeArchivedValue(value) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") {
+      return true;
+    }
+    if (normalized === "false") {
+      return false;
+    }
+  }
+
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+
+  return false;
+}
+
 function createEventId() {
   const randomPart = Math.random().toString(36).slice(2, 8);
   return `event-${Date.now().toString(36)}-${randomPart}`;
@@ -172,6 +194,7 @@ function normalizeEventEntry(event = {}, index = 0) {
     imageDataUrl: normalizeImageDataUrl(event.imageDataUrl),
     theme: getSafeThemeKey(event.theme),
     active: normalizeActiveValue(event.active),
+    archived: normalizeArchivedValue(event.archived),
     createdAt: normalizeIsoTimestamp(event.createdAt),
     updatedAt: normalizeIsoTimestamp(event.updatedAt),
   };
@@ -190,15 +213,16 @@ function sanitizeEventEntry(event = {}, index = 0) {
   return normalized;
 }
 
-function sanitizeEventsArray(input) {
+function sanitizeEventsArray(input, options = {}) {
   if (!Array.isArray(input)) {
     return [];
   }
 
+  const includeArchived = options.includeArchived === true;
   const byId = new Map();
   input.forEach((event, index) => {
     const sanitized = sanitizeEventEntry(event, index);
-    if (sanitized) {
+    if (sanitized && (includeArchived || !sanitized.archived)) {
       byId.set(sanitized.id, sanitized);
     }
   });
@@ -277,6 +301,7 @@ function buildStoredEvent(eventData = {}, existingEvent = null) {
     imageDataUrl: normalizeImageDataUrl(eventData.imageDataUrl || existingEvent?.imageDataUrl),
     theme: getSafeThemeKey(eventData.theme || existingEvent?.theme),
     active: typeof eventData.active === "boolean" ? eventData.active : normalizeActiveValue(existingEvent?.active),
+    archived: typeof eventData.archived === "boolean" ? eventData.archived : normalizeArchivedValue(existingEvent?.archived),
     createdAt: existingEvent?.createdAt || normalizeIsoTimestamp(eventData.createdAt) || nowIso,
     updatedAt: nowIso,
   };
@@ -399,7 +424,7 @@ export async function loadEvents() {
 }
 
 export function getUpcomingEvent(events, now = new Date()) {
-  const activeEvents = sanitizeEventsArray(events).filter((event) => event.active);
+  const activeEvents = sanitizeEventsArray(events).filter((event) => event.active && !event.archived);
   if (activeEvents.length === 0) {
     return null;
   }
@@ -419,25 +444,25 @@ export function getUpcomingEvent(events, now = new Date()) {
   return mostRecentPastEvents[0] ?? null;
 }
 
-export function getSavedEvents() {
-  return sanitizeEventsArray(getEventsFromStorage());
+export function getSavedEvents(options = {}) {
+  return sanitizeEventsArray(getEventsFromStorage(), options);
 }
 
 export function saveEvents(events) {
-  return saveEventsToStorage(sortEventsByDateTime(sanitizeEventsArray(events)));
+  return saveEventsToStorage(sortEventsByDateTime(sanitizeEventsArray(events, { includeArchived: true })));
 }
 
-export function createEvent(eventData, baseEvents = getSavedEvents()) {
+export function createEvent(eventData, baseEvents = getSavedEvents({ includeArchived: true })) {
   const items = sortEventsByDateTime([
-    ...sanitizeEventsArray(baseEvents),
+    ...sanitizeEventsArray(baseEvents, { includeArchived: true }),
     sanitizeEventEntry(buildStoredEvent(eventData), 0),
   ].filter(Boolean));
 
   return withSavedEvents(items);
 }
 
-export function updateEvent(eventId, eventData, baseEvents = getSavedEvents()) {
-  const items = sanitizeEventsArray(baseEvents).map((event) => (
+export function updateEvent(eventId, eventData, baseEvents = getSavedEvents({ includeArchived: true })) {
+  const items = sanitizeEventsArray(baseEvents, { includeArchived: true }).map((event) => (
     event.id === eventId
       ? sanitizeEventEntry(buildStoredEvent(eventData, event), 0)
       : event
@@ -446,13 +471,13 @@ export function updateEvent(eventId, eventData, baseEvents = getSavedEvents()) {
   return withSavedEvents(sortEventsByDateTime(items));
 }
 
-export function deleteEvent(eventId, baseEvents = getSavedEvents()) {
-  const items = sanitizeEventsArray(baseEvents).filter((event) => event.id !== eventId);
+export function deleteEvent(eventId, baseEvents = getSavedEvents({ includeArchived: true })) {
+  const items = sanitizeEventsArray(baseEvents, { includeArchived: true }).filter((event) => event.id !== eventId);
   return withSavedEvents(items);
 }
 
-export function duplicateEvent(eventId, baseEvents = getSavedEvents()) {
-  const items = sanitizeEventsArray(baseEvents);
+export function duplicateEvent(eventId, baseEvents = getSavedEvents({ includeArchived: true })) {
+  const items = sanitizeEventsArray(baseEvents, { includeArchived: true });
   const original = items.find((event) => event.id === eventId);
   if (!original) {
     return { ok: false, items };
@@ -470,10 +495,20 @@ export function duplicateEvent(eventId, baseEvents = getSavedEvents()) {
   return withSavedEvents(sortEventsByDateTime([...items, copy].filter(Boolean)));
 }
 
-export function toggleEventActive(eventId, baseEvents = getSavedEvents()) {
-  const items = sanitizeEventsArray(baseEvents).map((event) => (
+export function toggleEventActive(eventId, baseEvents = getSavedEvents({ includeArchived: true })) {
+  const items = sanitizeEventsArray(baseEvents, { includeArchived: true }).map((event) => (
     event.id === eventId
       ? sanitizeEventEntry(buildStoredEvent({ ...event, active: !event.active }, event), 0)
+      : event
+  )).filter(Boolean);
+
+  return withSavedEvents(sortEventsByDateTime(items));
+}
+
+export function setEventArchived(eventId, archived, baseEvents = getSavedEvents({ includeArchived: true })) {
+  const items = sanitizeEventsArray(baseEvents, { includeArchived: true }).map((event) => (
+    event.id === eventId
+      ? sanitizeEventEntry(buildStoredEvent({ ...event, archived }, event), 0)
       : event
   )).filter(Boolean);
 

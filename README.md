@@ -11,6 +11,7 @@ It is built with plain HTML, CSS, and JavaScript, works without a frontend build
 - `css/`: base, theme, display, and admin styles
 - `js/`: modular frontend logic plus checked-in standalone `file://` bundles
 - `data/`: sample JSON fallback data
+- `database/`: Supabase SQL migrations and maintenance scripts
 - `netlify/functions/`: Netlify Functions for Supabase-backed reads and writes
 
 ## Documentation
@@ -43,7 +44,15 @@ When deployed with Supabase configured:
 
 - prayer-time saves go through `/.netlify/functions/save-prayer-times`
 - event saves go through `/.netlify/functions/save-event`
-- event deletes go through `/.netlify/functions/delete-event`
+- active-event archive actions go through `/.netlify/functions/archive-event`
+- archived restore/delete actions go through the dedicated restore and permanent-delete functions
+
+Old data is archive-first:
+
+- prayer times from previous months can be archived automatically
+- events are archived one week after their event date/time passes
+- archived rows stay out of the public display
+- archived rows can be restored from the admin page
 
 If the Netlify Functions are unavailable, the admin page falls back to local browser storage and shows a warning.
 
@@ -114,6 +123,7 @@ Redirects include:
 - theme selection is still browser-local and is not yet synced through Supabase
 - event images are still stored as data URLs inside event records
 - local fallback data is device-specific
+- the included cleanup cron job must be applied in Supabase from `database/cleanup-archive-old-data.sql`
 
 ## Logo files
 

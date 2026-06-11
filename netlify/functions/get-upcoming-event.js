@@ -28,6 +28,7 @@ exports.handler = async function handler() {
       .from("events")
       .select("*")
       .eq("active", true)
+      .eq("archived", false)
       .order("event_date", { ascending: true })
       .order("event_time", { ascending: true })
       .limit(200);

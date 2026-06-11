@@ -26,6 +26,7 @@ exports.handler = async function handler(event) {
     const { data, error } = await supabase
       .from("prayer_times")
       .select("*")
+      .eq("archived", false)
       .in("date", [requestedDateKey, tomorrowDateKey]);
 
     if (error) {

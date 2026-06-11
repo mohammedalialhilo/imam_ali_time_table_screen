@@ -17,6 +17,28 @@ function isValidTimeString(timeString) {
   return TIME_PATTERN.test(String(timeString ?? "").trim());
 }
 
+function normalizeBoolean(value, fallback = false) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") {
+      return true;
+    }
+    if (normalized === "false") {
+      return false;
+    }
+  }
+
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+
+  return fallback;
+}
+
 function getSafeDisplayMode(mode = APP_CONFIG.prayerDisplayMode) {
   return APP_CONFIG.prayerDisplayModes[mode] ? mode : APP_CONFIG.prayerDisplayMode;
 }
@@ -61,6 +83,7 @@ function normalizePrayerEntry(entry = {}) {
     date: String(entry.date ?? "").trim(),
     hijriDateArabic: String(entry.hijriDateArabic ?? "").trim(),
     hijriDateLatin: String(entry.hijriDateLatin ?? "").trim(),
+    archived: normalizeBoolean(entry.archived, false),
   };
 
   APP_CONFIG.prayerFields.forEach((key) => {
@@ -88,15 +111,16 @@ function sortPrayerEntries(entries) {
   return [...entries].sort((left, right) => left.date.localeCompare(right.date));
 }
 
-function sanitizePrayerTimesArray(input) {
+function sanitizePrayerTimesArray(input, options = {}) {
   if (!Array.isArray(input)) {
     return [];
   }
 
+  const includeArchived = options.includeArchived === true;
   const uniqueEntries = new Map();
   input.forEach((entry) => {
     const sanitized = sanitizePrayerEntry(entry);
-    if (sanitized) {
+    if (sanitized && (includeArchived || !sanitized.archived)) {
       uniqueEntries.set(sanitized.date, sanitized);
     }
   });
@@ -387,6 +411,10 @@ export function getNextPrayer(
 export function getPrayerDisplayTime(entry, prayerKey) {
   const value = String(entry?.[prayerKey] ?? "").trim();
   return isValidTimeString(value) ? value : "—";
+}
+
+export function getSavedPrayerTimes(options = {}) {
+  return sanitizePrayerTimesArray(getPrayerTimesFromStorage(), options);
 }
 
 export function getCountdownPayload(targetDate, now = new Date()) {

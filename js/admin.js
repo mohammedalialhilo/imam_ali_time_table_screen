@@ -1,10 +1,11 @@
-import { APP_CONFIG, SAMPLE_EVENTS, SAMPLE_PRAYER_TIMES } from "./config.js";
+﻿import { APP_CONFIG, SAMPLE_EVENTS, SAMPLE_PRAYER_TIMES } from "./config.js";
 import {
   createEvent,
   deleteEvent,
   duplicateEvent,
   getEventThemeMeta,
   getSavedEvents,
+  setEventArchived,
   saveEvents,
   toggleEventActive,
   updateEvent,
@@ -18,21 +19,26 @@ import {
   summarizeImportedRows,
   validateImportedPrayerRows,
 } from "./import-prayer-image.js";
-import { validatePrayerTimesArray } from "./prayer-times.js";
+import { getSavedPrayerTimes, validatePrayerTimesArray } from "./prayer-times.js";
 import {
   clearStoredDisplayData,
   clearStoredEvents,
   clearStoredPrayerTimes,
-  getPrayerTimesFromStorage,
   getThemeFromStorage,
   hasLocalStorageSupport,
   savePrayerTimesToStorage,
   saveThemeToStorage,
 } from "./storage.js";
 import {
+  archiveEventRemotely,
   checkSupabaseConnection,
-  deleteEventRemotely,
   getRemoteFailureMessage,
+  loadAdminEventsFromRemote,
+  loadAdminPrayerTimesFromRemote,
+  permanentlyDeleteEventRemotely,
+  permanentlyDeletePrayerTimesRemotely,
+  restoreEventRemotely,
+  restorePrayerTimesRemotely,
   saveEventRemotely,
   savePrayerTimesRemotely,
 } from "./remote-data.js";
@@ -128,6 +134,15 @@ const elements = {
   eventDataSource: document.querySelector("#event-data-source"),
   toggleEventJsonEntry: document.querySelector("#toggle-event-json-entry"),
   eventJsonSection: document.querySelector("#event-json-section"),
+  archivedStatus: document.querySelector("#archived-status"),
+  toggleArchivedPrayerTimes: document.querySelector("#toggle-archived-prayer-times"),
+  toggleArchivedEvents: document.querySelector("#toggle-archived-events"),
+  archivedPrayerTimesSection: document.querySelector("#archived-prayer-times-section"),
+  archivedEventsSection: document.querySelector("#archived-events-section"),
+  archivedPrayerTimesList: document.querySelector("#archived-prayer-times-list"),
+  archivedEventsList: document.querySelector("#archived-events-list"),
+  archivedPrayerCount: document.querySelector("#archived-prayer-count"),
+  archivedEventCount: document.querySelector("#archived-event-count"),
 };
 
 const state = {
@@ -139,6 +154,11 @@ const state = {
   editingEventId: "",
   supabaseConnected: false,
   supabaseChecked: false,
+  remoteAdminDataLoaded: false,
+  remotePrayerTimes: [],
+  remoteEvents: [],
+  archivedPrayerTimes: [],
+  archivedEvents: [],
 };
 
 function setText(element, value) {
@@ -187,10 +207,19 @@ function getThemeLabel(theme) {
   return APP_CONFIG.themes[theme]?.label ?? APP_CONFIG.themes[APP_CONFIG.defaultTheme].label;
 }
 
-function getSavedPrayerData() {
-  const savedPrayerTimes = getPrayerTimesFromStorage();
-  const validation = validatePrayerTimesArray(savedPrayerTimes, { schema: "any" });
-  return validation.valid ? sortByDate(validation.normalized) : [];
+function getStoredPrayerData(options = {}) {
+  return sortByDate(getSavedPrayerTimes(options));
+}
+
+function getSavedPrayerData(options = {}) {
+  if (state.supabaseConnected && state.remoteAdminDataLoaded) {
+    if (options.includeArchived) {
+      return sortByDate([...state.remotePrayerTimes, ...state.archivedPrayerTimes]);
+    }
+    return sortByDate(state.remotePrayerTimes);
+  }
+
+  return getStoredPrayerData(options);
 }
 
 function getSampleEvents() {
@@ -198,8 +227,8 @@ function getSampleEvents() {
   return validation.valid ? validation.normalized : [];
 }
 
-function getCurrentEventCollection() {
-  const savedEvents = getSavedEvents();
+function getStoredEventCollection(options = {}) {
+  const savedEvents = getSavedEvents(options);
   if (savedEvents.length > 0) {
     return {
       items: savedEvents,
@@ -213,23 +242,161 @@ function getCurrentEventCollection() {
   };
 }
 
-function getDisplaySourceLabel(usingLocalPrayerData, usingLocalEventData) {
+function getCurrentEventCollection(options = {}) {
+  if (state.supabaseConnected && state.remoteAdminDataLoaded) {
+    if (options.includeArchived) {
+      return {
+        items: [...state.remoteEvents, ...state.archivedEvents],
+        source: "supabase",
+      };
+    }
+
+    return {
+      items: state.remoteEvents,
+      source: "supabase",
+    };
+  }
+
+  return getStoredEventCollection(options);
+}
+
+function buildEventStorageSnapshot(activeEvents) {
+  const merged = new Map();
+  [...getArchivedEventData(), ...activeEvents].forEach((event) => {
+    merged.set(event.id, event);
+  });
+  return [...merged.values()];
+}
+
+function getDisplaySourceLabel(collectionSource) {
+  if (collectionSource === "supabase") {
+    return "Supabase";
+  }
+
+  if (collectionSource === "localStorage") {
+    return "localStorage";
+  }
+
   if (state.supabaseConnected) {
     return "Supabase";
   }
 
-  if (usingLocalPrayerData || usingLocalEventData) {
-    return "localStorage";
+  if (collectionSource === "sample") {
+    return "Sample data";
+  }
+
+  if (state.supabaseConnected) {
+    return "Supabase";
   }
 
   return "Sample data";
+}
+
+function getArchivedPrayerData() {
+  if (state.supabaseConnected) {
+    return sortByDate(state.archivedPrayerTimes);
+  }
+
+  return getStoredPrayerData({ includeArchived: true }).filter((entry) => entry.archived);
+}
+
+function getArchivedEventData() {
+  if (state.supabaseConnected) {
+    return [...state.archivedEvents];
+  }
+
+  return getSavedEvents({ includeArchived: true }).filter((event) => event.archived);
+}
+
+function updateArchivedToggleLabels() {
+  setText(
+    elements.toggleArchivedPrayerTimes,
+    elements.archivedPrayerTimesSection.hidden ? "Show archived prayer times" : "Hide archived prayer times",
+  );
+  setText(
+    elements.toggleArchivedEvents,
+    elements.archivedEventsSection.hidden ? "Show archived events" : "Hide archived events",
+  );
+}
+
+function syncLocalCacheWithRemote() {
+  const combinedPrayerTimes = sortByDate([...state.remotePrayerTimes, ...state.archivedPrayerTimes]);
+  const combinedEvents = [...state.remoteEvents, ...state.archivedEvents];
+
+  savePrayerTimesToStorage(combinedPrayerTimes);
+  saveEvents(combinedEvents);
+}
+
+async function refreshRemoteAdminData(options = {}) {
+  if (!state.supabaseConnected) {
+    state.remoteAdminDataLoaded = false;
+    state.remotePrayerTimes = [];
+    state.remoteEvents = [];
+    state.archivedPrayerTimes = [];
+    state.archivedEvents = [];
+    renderArchivedData();
+    refreshStatusPanel();
+    return null;
+  }
+
+  const [activePrayerResult, activeEventResult, archivedPrayerResult, archivedEventResult] = await Promise.all([
+    loadAdminPrayerTimesFromRemote({ archived: false }),
+    loadAdminEventsFromRemote({ archived: false }),
+    loadAdminPrayerTimesFromRemote({ archived: true }),
+    loadAdminEventsFromRemote({ archived: true }),
+  ]);
+
+  const failure = [activePrayerResult, activeEventResult, archivedPrayerResult, archivedEventResult]
+    .find((result) => !result.ok) ?? null;
+
+  if (failure) {
+    state.remoteAdminDataLoaded = false;
+    setStatus(
+      elements.archivedStatus,
+      getRemoteFailureMessage(failure, "Archived data could not be loaded from Supabase."),
+      "warning",
+    );
+    renderArchivedData();
+    refreshStatusPanel();
+    return null;
+  }
+
+  state.remoteAdminDataLoaded = true;
+  state.remotePrayerTimes = sortByDate(activePrayerResult.data?.items ?? []);
+  state.remoteEvents = activeEventResult.data?.items ?? [];
+  state.archivedPrayerTimes = sortByDate(archivedPrayerResult.data?.items ?? []);
+  state.archivedEvents = archivedEventResult.data?.items ?? [];
+  syncLocalCacheWithRemote();
+
+  if (options.hydrateEditors) {
+    updateManualEditorFromSavedPrayerData(state.remotePrayerTimes);
+    syncEventEditor(state.remoteEvents);
+  }
+
+  renderSavedEvents();
+  renderArchivedData();
+  refreshStatusPanel();
+  setStatus(elements.archivedStatus, "Archived data loaded from Supabase.", "success");
+  return {
+    prayerTimes: state.remotePrayerTimes,
+    events: state.remoteEvents,
+    archivedPrayerTimes: state.archivedPrayerTimes,
+    archivedEvents: state.archivedEvents,
+  };
 }
 
 async function refreshSupabaseConnectionState() {
   const result = await checkSupabaseConnection();
   state.supabaseConnected = result.connected;
   state.supabaseChecked = true;
-  refreshStatusPanel();
+
+  if (result.connected) {
+    await refreshRemoteAdminData({ hydrateEditors: true });
+  } else {
+    renderArchivedData();
+    refreshStatusPanel();
+  }
+
   setStatus(
     elements.generalStatus,
     result.connected ? APP_CONFIG.syncMessages.connected : APP_CONFIG.syncMessages.unavailable,
@@ -242,7 +409,11 @@ async function syncPrayerTimesWithRemote(entries) {
   const result = await savePrayerTimesRemotely(entries);
   state.supabaseConnected = result.ok;
   state.supabaseChecked = true;
-  refreshStatusPanel();
+  if (result.ok) {
+    await refreshRemoteAdminData({ hydrateEditors: true });
+  } else {
+    refreshStatusPanel();
+  }
   return result;
 }
 
@@ -250,7 +421,11 @@ async function syncEventWithRemote(event) {
   const result = await saveEventRemotely(event);
   state.supabaseConnected = result.ok;
   state.supabaseChecked = true;
-  refreshStatusPanel();
+  if (result.ok) {
+    await refreshRemoteAdminData({ hydrateEditors: true });
+  } else {
+    refreshStatusPanel();
+  }
   return result;
 }
 
@@ -271,7 +446,11 @@ async function syncEventCollectionWithRemote(events) {
   const allSkipped = results.every((result) => result.skipped);
   state.supabaseConnected = !failedResult && !allSkipped;
   state.supabaseChecked = true;
-  refreshStatusPanel();
+  if (!failedResult && !allSkipped) {
+    await refreshRemoteAdminData({ hydrateEditors: true });
+  } else {
+    refreshStatusPanel();
+  }
 
   if (failedResult) {
     return failedResult;
@@ -296,11 +475,15 @@ async function syncEventCollectionWithRemote(events) {
   };
 }
 
-async function syncEventDeleteWithRemote(eventId) {
-  const result = await deleteEventRemotely(eventId);
+async function syncEventArchiveWithRemote(eventId) {
+  const result = await archiveEventRemotely(eventId);
   state.supabaseConnected = result.ok;
   state.supabaseChecked = true;
-  refreshStatusPanel();
+  if (result.ok) {
+    await refreshRemoteAdminData({ hydrateEditors: true });
+  } else {
+    refreshStatusPanel();
+  }
   return result;
 }
 
@@ -339,18 +522,16 @@ function setDefaultImportPeriod() {
 }
 
 function refreshStatusPanel() {
-  const savedPrayerTimes = getSavedPrayerData();
-  const savedEvents = getSavedEvents();
+  const prayerEntries = getSavedPrayerData();
+  const eventCollection = getCurrentEventCollection();
+  const savedEvents = eventCollection.items;
   const currentTheme = getThemeFromStorage();
-  const usingLocalPrayerData = savedPrayerTimes.length > 0;
-  const usingLocalEventData = savedEvents.length > 0;
-
-  setText(elements.statusPrayerCount, String(savedPrayerTimes.length));
-  setText(elements.statusPrayerFirstDate, savedPrayerTimes[0]?.date ?? "—");
-  setText(elements.statusPrayerLastDate, savedPrayerTimes[savedPrayerTimes.length - 1]?.date ?? "—");
+  setText(elements.statusPrayerCount, String(prayerEntries.length));
+  setText(elements.statusPrayerFirstDate, prayerEntries[0]?.date ?? "--");
+  setText(elements.statusPrayerLastDate, prayerEntries[prayerEntries.length - 1]?.date ?? "--");
   setText(elements.statusEventCount, String(savedEvents.length));
   setText(elements.statusCurrentTheme, getThemeLabel(currentTheme));
-  setText(elements.statusDataSource, getDisplaySourceLabel(usingLocalPrayerData, usingLocalEventData));
+  setText(elements.statusDataSource, getDisplaySourceLabel(state.supabaseConnected && prayerEntries.length > 0 ? "supabase" : eventCollection.source));
 
   if (!state.supabaseChecked) {
     setStatus(elements.adminStatusNote, "Checking Supabase connection status...", "warning");
@@ -362,7 +543,7 @@ function refreshStatusPanel() {
     return;
   }
 
-  if (!usingLocalPrayerData && !usingLocalEventData) {
+  if (prayerEntries.length === 0 && savedEvents.length === 0) {
     setStatus(
       elements.adminStatusNote,
       `${APP_CONFIG.syncMessages.unavailable} The display will use bundled sample data.`,
@@ -371,7 +552,7 @@ function refreshStatusPanel() {
     return;
   }
 
-  if (!usingLocalPrayerData) {
+  if (prayerEntries.length === 0) {
     setStatus(
       elements.adminStatusNote,
       `${APP_CONFIG.syncMessages.unavailable} Prayer times still come from sample data. Events or theme settings are saved in this browser.`,
@@ -521,7 +702,7 @@ function renderPreviewTable() {
     const statusClass = row.errors.length > 0 ? "preview-status-text is-error" : "preview-status-text";
     const statusText = row.errors.length > 0
       ? row.statusText
-      : `Ready. Source line ${row.sourceLineNumber || "—"}.`;
+      : `Ready. Source line ${row.sourceLineNumber || "--"}.`;
 
     return `
       <tr class="${row.errors.length > 0 ? "preview-row-error" : ""}">
@@ -626,14 +807,30 @@ function updateManualEditorFromSavedPrayerData(prayerEntries) {
   elements.prayerTimesInput.value = prettyJson(sortByDate(prayerEntries));
 }
 
-async function persistPrayerDataset(prayerEntries, successMessage) {
-  const localSaved = savePrayerTimesToStorage(prayerEntries);
-  const remoteResult = await syncPrayerTimesWithRemote(prayerEntries);
+function buildPrayerStorageSnapshot(activePrayerEntries) {
+  const archivedEntries = getArchivedPrayerData();
+  return sortByDate([
+    ...archivedEntries,
+    ...activePrayerEntries.map((entry) => ({ ...entry, archived: false })),
+  ]);
+}
+
+function savePrayerSnapshotLocally(allPrayerEntries) {
+  const orderedEntries = sortByDate(allPrayerEntries);
+  const localSaved = savePrayerTimesToStorage(orderedEntries);
 
   if (localSaved) {
-    updateManualEditorFromSavedPrayerData(prayerEntries);
+    updateManualEditorFromSavedPrayerData(orderedEntries.filter((entry) => !entry.archived));
+    renderArchivedData();
     refreshStatusPanel();
   }
+
+  return localSaved;
+}
+
+async function persistPrayerDataset(prayerEntries, successMessage) {
+  const localSaved = savePrayerSnapshotLocally(buildPrayerStorageSnapshot(prayerEntries));
+  const remoteResult = await syncPrayerTimesWithRemote(prayerEntries);
 
   if (remoteResult.ok && localSaved) {
     return {
@@ -744,7 +941,7 @@ async function runOcrForCurrentImage() {
     return;
   }
 
-  setStatus(elements.imageImportStatus, "Loading OCR engine…", "warning");
+  setStatus(elements.imageImportStatus, "Loading OCR engine...", "warning");
 
   try {
     const Tesseract = await loadTesseract();
@@ -1099,7 +1296,7 @@ function validateEventFormPayload(payload) {
 function renderSavedEventCard(event) {
   const themeMeta = getEventThemeMeta(event.theme);
   const locationText = event.locationArabic || event.locationDanish
-    ? `${event.locationArabic || "—"} / ${event.locationDanish || "—"}`
+    ? `${event.locationArabic || "--"} / ${event.locationDanish || "--"}`
     : "No location / بدون موقع";
 
   const imageMarkup = event.imageDataUrl
@@ -1138,15 +1335,178 @@ function renderSavedEventCard(event) {
         <button type="button" data-action="toggle" data-event-id="${escapeHtml(event.id)}">
           ${event.active ? "Hide" : "Show"}
         </button>
-        <button type="button" class="button-danger" data-action="delete" data-event-id="${escapeHtml(event.id)}">Delete</button>
+        <button type="button" class="button-warning" data-action="archive" data-event-id="${escapeHtml(event.id)}">Archive</button>
       </div>
     </article>
   `;
 }
 
+function groupArchivedPrayerTimesByMonth(rows) {
+  const grouped = new Map();
+  rows.forEach((row) => {
+    const monthKey = String(row.date ?? "").slice(0, 7);
+    if (!monthKey) {
+      return;
+    }
+
+    if (!grouped.has(monthKey)) {
+      grouped.set(monthKey, []);
+    }
+
+    grouped.get(monthKey).push(row);
+  });
+
+  return [...grouped.entries()].sort((left, right) => left[0].localeCompare(right[0]));
+}
+
+function renderPrayerSummary(row) {
+  const summaryParts = [
+    `Fajr ${row.fajr || "—"}`,
+    `Sunrise ${row.sunrise || "—"}`,
+    `Dhuhr ${row.dhuhr || "—"}`,
+    `Maghrib ${row.maghrib || "—"}`,
+  ];
+
+  if (row.sunset) {
+    summaryParts.splice(3, 0, `Sunset ${row.sunset}`);
+  }
+
+  if (row.midnight) {
+    summaryParts.push(`Midnight ${row.midnight}`);
+  }
+
+  if (row.asr) {
+    summaryParts.push(`Asr ${row.asr}`);
+  }
+
+  if (row.isha) {
+    summaryParts.push(`Isha ${row.isha}`);
+  }
+
+  return summaryParts.join(" • ");
+}
+
+function renderArchivedPrayerTimes() {
+  const archivedPrayerTimes = getArchivedPrayerData();
+  setText(elements.archivedPrayerCount, `${archivedPrayerTimes.length} rows`);
+
+  if (archivedPrayerTimes.length === 0) {
+    elements.archivedPrayerTimesList.innerHTML = `
+      <div class="saved-events-empty">
+        No archived prayer times are available.
+      </div>
+    `;
+    return;
+  }
+
+  elements.archivedPrayerTimesList.innerHTML = groupArchivedPrayerTimesByMonth(archivedPrayerTimes)
+    .map(([monthKey, rows]) => `
+      <section class="archived-group">
+        <div class="archived-group-header">
+          <div>
+            <h4>${escapeHtml(monthKey)}</h4>
+            <p>${rows.length} archived prayer-time rows</p>
+          </div>
+          <div class="saved-event-actions archived-actions">
+            <button type="button" data-archived-action="restore-prayer-month" data-month="${escapeHtml(monthKey)}">Restore month</button>
+            <button type="button" class="button-danger" data-archived-action="delete-prayer-month" data-month="${escapeHtml(monthKey)}">Delete month</button>
+          </div>
+        </div>
+        <div class="archived-prayer-rows">
+          ${rows.map((row) => `
+            <article class="archived-prayer-row">
+              <div class="archived-prayer-copy">
+                <strong>${escapeHtml(row.date)}</strong>
+                <p>${escapeHtml(renderPrayerSummary(row))}</p>
+              </div>
+              <div class="saved-event-actions archived-actions">
+                <button type="button" data-archived-action="restore-prayer-date" data-date="${escapeHtml(row.date)}">Restore</button>
+                <button type="button" class="button-danger" data-archived-action="delete-prayer-date" data-date="${escapeHtml(row.date)}">Delete</button>
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      </section>
+    `)
+    .join("");
+}
+
+function renderArchivedEventCard(event) {
+  const themeMeta = getEventThemeMeta(event.theme);
+  return `
+    <article class="saved-event-card archived-event-card" data-event-id="${escapeHtml(event.id)}">
+      <div class="saved-event-thumb" data-theme="${escapeHtml(themeMeta.key)}">
+        ${event.imageDataUrl
+          ? `<img src="${escapeHtml(event.imageDataUrl)}" alt="${escapeHtml(event.titleDanish || event.titleArabic || "Event image")}">`
+          : `
+            <div class="saved-event-thumb-placeholder">
+              <span class="saved-event-thumb-symbol">${escapeHtml(themeMeta.symbol)}</span>
+              <span class="arabic">${escapeHtml(themeMeta.placeholderArabic)}</span>
+              <span class="latin">${escapeHtml(themeMeta.placeholderDanish)}</span>
+            </div>
+          `}
+      </div>
+      <div class="saved-event-copy">
+        <h4 class="saved-event-title-ar arabic">${escapeHtml(event.titleArabic)}</h4>
+        <p class="saved-event-title-da latin">${escapeHtml(event.titleDanish)}</p>
+        <div class="saved-event-meta">
+          <span>${escapeHtml(event.date)}</span>
+          <span>${escapeHtml(event.time)}</span>
+          <span>${escapeHtml(themeMeta.label)}</span>
+        </div>
+      </div>
+      <div class="saved-event-actions archived-actions">
+        <button type="button" data-archived-action="restore-event" data-event-id="${escapeHtml(event.id)}">Restore event</button>
+        <button type="button" class="button-danger" data-archived-action="delete-event" data-event-id="${escapeHtml(event.id)}">Delete forever</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderArchivedEvents() {
+  const archivedEvents = getArchivedEventData();
+  setText(elements.archivedEventCount, `${archivedEvents.length} events`);
+
+  if (archivedEvents.length === 0) {
+    elements.archivedEventsList.innerHTML = `
+      <div class="saved-events-empty">
+        No archived events are available.
+      </div>
+    `;
+    return;
+  }
+
+  elements.archivedEventsList.innerHTML = archivedEvents
+    .map((event) => renderArchivedEventCard(event))
+    .join("");
+}
+
+function renderArchivedData() {
+  renderArchivedPrayerTimes();
+  renderArchivedEvents();
+  updateArchivedToggleLabels();
+
+  if (!state.supabaseConnected && !state.supabaseChecked) {
+    setStatus(elements.archivedStatus, "Checking whether archived Supabase data is available...", "warning");
+    return;
+  }
+
+  if (!state.supabaseConnected) {
+    setStatus(
+      elements.archivedStatus,
+      "Archived data can be managed from Supabase when the deployed admin page is connected. Local archived fallback is shown if available.",
+      "warning",
+    );
+  }
+}
+
 function renderSavedEvents() {
   const collection = getCurrentEventCollection();
-  elements.eventDataSource.textContent = collection.source === "localStorage" ? "localStorage" : "Sample data";
+  elements.eventDataSource.textContent = collection.source === "supabase"
+    ? "Supabase"
+    : collection.source === "localStorage"
+      ? "localStorage"
+      : "Sample data";
 
   if (collection.items.length === 0) {
     elements.savedEventsList.innerHTML = `
@@ -1174,14 +1534,22 @@ async function persistEventResult(result, successMessage, remoteAction = null) {
     };
 
   if (result.ok) {
-    syncEventEditor(result.items);
+    syncEventEditor(result.items.filter((item) => !item.archived));
     renderSavedEvents();
     refreshStatusPanel();
-    setStatus(elements.eventsStatus, `Event JSON editor updated with ${result.items.length} saved event entries.`, "success");
+    setStatus(
+      elements.eventsStatus,
+      `Event JSON editor updated with ${result.items.filter((item) => !item.archived).length} saved event entries.`,
+      "success",
+    );
   }
 
   if (remoteResult.ok && result.ok) {
-    setStatus(elements.eventsStatus, `Event JSON editor updated with ${result.items.length} saved event entries.`, "success");
+    setStatus(
+      elements.eventsStatus,
+      `Event JSON editor updated with ${result.items.filter((item) => !item.archived).length} saved event entries.`,
+      "success",
+    );
     setStatus(elements.eventFormStatus, successMessage, "success");
     setStatus(elements.generalStatus, APP_CONFIG.syncMessages.connected, "success");
     return true;
@@ -1241,6 +1609,141 @@ async function handleEventFormSubmit(event) {
   }
 }
 
+function getPrayerArchiveMatcher(payload = {}) {
+  const dateSet = new Set();
+  if (payload.date) {
+    dateSet.add(String(payload.date).trim());
+  }
+  if (Array.isArray(payload.dates)) {
+    payload.dates.forEach((dateKey) => {
+      dateSet.add(String(dateKey).trim());
+    });
+  }
+
+  const monthKey = String(payload.month ?? "").trim();
+  return (entry) => {
+    if (dateSet.size > 0) {
+      return dateSet.has(entry.date);
+    }
+
+    if (monthKey) {
+      return entry.date.startsWith(`${monthKey}-`);
+    }
+
+    return false;
+  };
+}
+
+function setPrayerArchivedLocally(payload, archived) {
+  const matcher = getPrayerArchiveMatcher(payload);
+  const items = getStoredPrayerData({ includeArchived: true }).map((entry) => (
+    matcher(entry)
+      ? { ...entry, archived }
+      : entry
+  ));
+
+  return {
+    ok: savePrayerSnapshotLocally(items),
+    items,
+  };
+}
+
+function permanentlyDeletePrayerEntriesLocally(payload) {
+  const matcher = getPrayerArchiveMatcher(payload);
+  const items = getStoredPrayerData({ includeArchived: true }).filter((entry) => !matcher(entry));
+  return {
+    ok: savePrayerSnapshotLocally(items),
+    items,
+  };
+}
+
+async function handleArchivedPrayerAction(action, payload, successMessage) {
+  const localResult = action === "restore"
+    ? setPrayerArchivedLocally(payload, false)
+    : permanentlyDeletePrayerEntriesLocally(payload);
+
+  if (state.supabaseConnected) {
+    const remoteResult = action === "restore"
+      ? await restorePrayerTimesRemotely(payload)
+      : await permanentlyDeletePrayerTimesRemotely(payload);
+
+    if (remoteResult.ok) {
+      await refreshRemoteAdminData({ hydrateEditors: true });
+      setStatus(elements.archivedStatus, successMessage, "success");
+      setStatus(elements.generalStatus, APP_CONFIG.syncMessages.connected, "success");
+      return;
+    }
+
+    setStatus(
+      elements.archivedStatus,
+      `${successMessage} failed to sync. ${getRemoteFailureMessage(remoteResult, "Supabase unavailable.")}`,
+      localResult.ok ? "warning" : "error",
+    );
+    setStatus(elements.generalStatus, getRemoteFailureMessage(remoteResult, "Archived prayer times could not be updated."), localResult.ok ? "warning" : "error");
+    return;
+  }
+
+  if (localResult.ok) {
+    setStatus(elements.archivedStatus, `${successMessage} Saved in this browser only.`, "warning");
+    setStatus(elements.generalStatus, APP_CONFIG.syncMessages.localOnly, "warning");
+    return;
+  }
+
+  setStatus(elements.archivedStatus, "Archived prayer times could not be updated.", "error");
+  setStatus(elements.generalStatus, "Archived prayer times could not be updated.", "error");
+}
+
+async function handleArchivedEventAction(action, eventId) {
+  const baseEvents = getCurrentEventCollection({ includeArchived: true }).items;
+  const localResult = action === "restore"
+    ? setEventArchived(eventId, false, baseEvents)
+    : deleteEvent(eventId, baseEvents);
+
+  if (state.supabaseConnected) {
+    const remoteResult = action === "restore"
+      ? await restoreEventRemotely(eventId)
+      : await permanentlyDeleteEventRemotely(eventId);
+
+    if (remoteResult.ok) {
+      await refreshRemoteAdminData({ hydrateEditors: true });
+      setStatus(
+        elements.archivedStatus,
+        action === "restore" ? "Archived event restored." : "Archived event permanently deleted.",
+        "success",
+      );
+      setStatus(elements.generalStatus, APP_CONFIG.syncMessages.connected, "success");
+      return;
+    }
+
+    setStatus(
+      elements.archivedStatus,
+      getRemoteFailureMessage(remoteResult, "Archived event could not be updated in Supabase."),
+      localResult.ok ? "warning" : "error",
+    );
+    setStatus(elements.generalStatus, getRemoteFailureMessage(remoteResult, "Archived event could not be updated."), localResult.ok ? "warning" : "error");
+    return;
+  }
+
+  if (localResult.ok) {
+    syncEventEditor(localResult.items.filter((item) => !item.archived));
+    renderSavedEvents();
+    renderArchivedData();
+    refreshStatusPanel();
+    setStatus(
+      elements.archivedStatus,
+      action === "restore"
+        ? "Archived event restored in this browser only."
+        : "Archived event permanently deleted in this browser only.",
+      "warning",
+    );
+    setStatus(elements.generalStatus, APP_CONFIG.syncMessages.localOnly, "warning");
+    return;
+  }
+
+  setStatus(elements.archivedStatus, "Archived event could not be updated.", "error");
+  setStatus(elements.generalStatus, "Archived event could not be updated.", "error");
+}
+
 async function handleSavedEventAction(event) {
   const target = event.target;
   if (!(target instanceof HTMLButtonElement)) {
@@ -1265,13 +1768,14 @@ async function handleSavedEventAction(event) {
     return;
   }
 
-  if (action === "delete") {
-    if (!window.confirm("Delete this event?")) {
+  if (action === "archive") {
+    if (!window.confirm("Archive this event? You can restore it later from the archived data section.")) {
       return;
     }
 
-    const result = deleteEvent(eventId, collection.items);
-    if (await persistEventResult(result, "Event deleted.", () => syncEventDeleteWithRemote(eventId))) {
+    const baseEvents = getCurrentEventCollection({ includeArchived: true }).items;
+    const result = setEventArchived(eventId, true, baseEvents);
+    if (await persistEventResult(result, "Event archived.", () => syncEventArchiveWithRemote(eventId))) {
       if (state.editingEventId === eventId) {
         resetEventForm({ preserveStatus: true });
       }
@@ -1290,6 +1794,70 @@ async function handleSavedEventAction(event) {
     const result = toggleEventActive(eventId, collection.items);
     const toggledEvent = result.items.find((item) => item.id === eventId);
     await persistEventResult(result, "Event visibility updated.", () => syncEventWithRemote(toggledEvent));
+  }
+}
+
+async function handleArchivedPrayerListAction(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  const action = target.dataset.archivedAction;
+  const date = target.dataset.date;
+  const month = target.dataset.month;
+  if (!action || (!date && !month)) {
+    return;
+  }
+
+  if (action === "restore-prayer-date") {
+    await handleArchivedPrayerAction("restore", { date }, `Prayer times for ${date} restored.`);
+    return;
+  }
+
+  if (action === "restore-prayer-month") {
+    await handleArchivedPrayerAction("restore", { month }, `Prayer times for ${month} restored.`);
+    return;
+  }
+
+  if (action === "delete-prayer-date") {
+    if (!window.confirm(`Permanently delete archived prayer times for ${date}? This cannot be undone.`)) {
+      return;
+    }
+    await handleArchivedPrayerAction("delete", { date }, `Archived prayer times for ${date} permanently deleted.`);
+    return;
+  }
+
+  if (action === "delete-prayer-month") {
+    if (!window.confirm(`Permanently delete all archived prayer times for ${month}? This cannot be undone.`)) {
+      return;
+    }
+    await handleArchivedPrayerAction("delete", { month }, `Archived prayer times for ${month} permanently deleted.`);
+  }
+}
+
+async function handleArchivedEventListAction(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  const action = target.dataset.archivedAction;
+  const eventId = target.dataset.eventId;
+  if (!action || !eventId) {
+    return;
+  }
+
+  if (action === "restore-event") {
+    await handleArchivedEventAction("restore", eventId);
+    return;
+  }
+
+  if (action === "delete-event") {
+    if (!window.confirm("Permanently delete this archived event? This cannot be undone.")) {
+      return;
+    }
+    await handleArchivedEventAction("delete", eventId);
   }
 }
 
@@ -1352,7 +1920,7 @@ function bindEvents() {
       return;
     }
 
-    const localSaved = saveEvents(normalized);
+    const localSaved = saveEvents(buildEventStorageSnapshot(normalized));
     if (localSaved) {
       syncEventEditor(normalized);
       renderSavedEvents();
@@ -1442,6 +2010,20 @@ function bindEvents() {
     setStatus(elements.eventFormStatus, "Edit cancelled. The form is ready for a new event.", "warning");
   });
   elements.savedEventsList.addEventListener("click", handleSavedEventAction);
+  elements.toggleArchivedPrayerTimes.addEventListener("click", () => {
+    elements.archivedPrayerTimesSection.hidden = !elements.archivedPrayerTimesSection.hidden;
+    updateArchivedToggleLabels();
+  });
+  elements.toggleArchivedEvents.addEventListener("click", () => {
+    elements.archivedEventsSection.hidden = !elements.archivedEventsSection.hidden;
+    updateArchivedToggleLabels();
+  });
+  elements.archivedPrayerTimesList.addEventListener("click", (event) => {
+    void handleArchivedPrayerListAction(event);
+  });
+  elements.archivedEventsList.addEventListener("click", (event) => {
+    void handleArchivedEventListAction(event);
+  });
 
   elements.clearPrayerTimes.addEventListener("click", () => {
     if (!clearStoredPrayerTimes()) {
@@ -1449,7 +2031,11 @@ function bindEvents() {
       return;
     }
 
-    elements.prayerTimesInput.value = prettyJson(SAMPLE_PRAYER_TIMES);
+    elements.prayerTimesInput.value = prettyJson(
+      state.supabaseConnected && state.remoteAdminDataLoaded
+        ? state.remotePrayerTimes
+        : SAMPLE_PRAYER_TIMES,
+    );
     setStatus(elements.prayerTimesStatus, "Saved prayer times cleared. The manual JSON editor now shows sample data.", "warning");
     setStatus(
       elements.importSaveStatus,
@@ -1466,6 +2052,7 @@ function bindEvents() {
         : "Saved prayer times cleared. index.html will fall back to sample prayer data.",
       "warning",
     );
+    renderArchivedData();
     refreshStatusPanel();
   });
 
@@ -1475,7 +2062,11 @@ function bindEvents() {
       return;
     }
 
-    syncEventEditor(SAMPLE_EVENTS);
+    syncEventEditor(
+      state.supabaseConnected && state.remoteAdminDataLoaded
+        ? state.remoteEvents
+        : SAMPLE_EVENTS,
+    );
     renderSavedEvents();
     resetEventForm({ preserveStatus: true });
     setStatus(elements.eventsStatus, "Saved events cleared. The JSON fallback editor now shows sample events.", "warning");
@@ -1487,6 +2078,7 @@ function bindEvents() {
         : "Saved events cleared. index.html will fall back to sample events if needed.",
       "warning",
     );
+    renderArchivedData();
     refreshStatusPanel();
   });
 
@@ -1518,6 +2110,7 @@ function bindEvents() {
         : "Saved browser data cleared. index.html will now fall back to sample data.",
       "warning",
     );
+    renderArchivedData();
     refreshStatusPanel();
   });
 }
@@ -1531,11 +2124,20 @@ async function initAdmin() {
   setGeneralReadyState();
   toggleManualSection(false);
   toggleEventJsonSection(false);
+  elements.archivedPrayerTimesSection.hidden = true;
+  elements.archivedEventsSection.hidden = true;
   renderPreviewTable();
   renderSavedEvents();
+  renderArchivedData();
   resetEventForm({ preserveStatus: true });
   bindEvents();
   await refreshSupabaseConnectionState();
 }
 
 void initAdmin();
+
+
+
+
+
+

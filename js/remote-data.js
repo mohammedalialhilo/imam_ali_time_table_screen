@@ -13,6 +13,18 @@ function buildJsonHeaders(headers = {}) {
   };
 }
 
+function buildQueryString(params = {}) {
+  const searchParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      searchParams.set(key, String(value));
+    }
+  });
+
+  const query = searchParams.toString();
+  return query ? `?${query}` : "";
+}
+
 async function requestJson(url, options = {}) {
   if (!canUseRemoteFunctions()) {
     return {
@@ -83,12 +95,26 @@ export function getRemoteFailureMessage(result, fallbackMessage = APP_CONFIG.syn
 }
 
 export async function loadPrayerTimesFromRemote(dateKey) {
-  const query = dateKey ? `?date=${encodeURIComponent(dateKey)}` : "";
+  const query = buildQueryString({ date: dateKey });
   return requestJson(`${APP_CONFIG.apiPaths.todayPrayerTimes}${query}`);
 }
 
 export async function loadUpcomingEventFromRemote() {
   return requestJson(APP_CONFIG.apiPaths.upcomingEvent);
+}
+
+export async function loadAdminPrayerTimesFromRemote(options = {}) {
+  const query = buildQueryString({
+    archived: options.archived ?? false,
+  });
+  return requestJson(`${APP_CONFIG.apiPaths.adminPrayerTimes}${query}`);
+}
+
+export async function loadAdminEventsFromRemote(options = {}) {
+  const query = buildQueryString({
+    archived: options.archived ?? false,
+  });
+  return requestJson(`${APP_CONFIG.apiPaths.adminEvents}${query}`);
 }
 
 export async function savePrayerTimesRemotely(items) {
@@ -105,10 +131,38 @@ export async function saveEventRemotely(event) {
   });
 }
 
-export async function deleteEventRemotely(eventId) {
-  return requestJson(APP_CONFIG.apiPaths.deleteEvent, {
+export async function archiveEventRemotely(eventId) {
+  return requestJson(APP_CONFIG.apiPaths.archiveEvent, {
     method: "POST",
     body: { id: eventId },
+  });
+}
+
+export async function restoreEventRemotely(eventId) {
+  return requestJson(APP_CONFIG.apiPaths.restoreEvent, {
+    method: "POST",
+    body: { id: eventId },
+  });
+}
+
+export async function restorePrayerTimesRemotely(payload) {
+  return requestJson(APP_CONFIG.apiPaths.restorePrayerTimes, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function permanentlyDeleteEventRemotely(eventId) {
+  return requestJson(APP_CONFIG.apiPaths.permanentlyDeleteEvent, {
+    method: "POST",
+    body: { id: eventId, confirm: true },
+  });
+}
+
+export async function permanentlyDeletePrayerTimesRemotely(payload) {
+  return requestJson(APP_CONFIG.apiPaths.permanentlyDeletePrayerTimes, {
+    method: "POST",
+    body: { ...payload, confirm: true },
   });
 }
 

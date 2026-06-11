@@ -53,7 +53,7 @@ exports.handler = async function handler(event) {
       existingRow = currentData ?? null;
     }
 
-    const dbRow = toEventDbRow(normalized, existingRow ?? {});
+    const dbRow = toEventDbRow(normalized, existingRow ?? {}, { archived: false });
     const { data, error } = await supabase
       .from("events")
       .upsert(dbRow, { onConflict: "id" })

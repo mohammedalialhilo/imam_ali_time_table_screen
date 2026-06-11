@@ -354,9 +354,9 @@ Behavior:
 
 Behavior:
 
-- POST or DELETE
-- deletes by event ID only
-- does not delete unrelated rows
+- compatibility wrapper
+- forwards to `archive-event.js`
+- keeps older callers archive-first instead of hard-deleting
 
 ## Data flow
 
@@ -614,7 +614,7 @@ Then test writes from the admin page:
 
 1. save prayer times
 2. save an event
-3. delete an event
+3. archive an event, then restore it from the archived section
 4. confirm the display updates within about one minute or on manual refresh
 
 ## How to rotate keys
@@ -654,12 +654,112 @@ Verify after changes:
 12. `file://` mode still works
 13. standalone bundles still load
 
+## Archive and cleanup
+
+Archive-first behavior is part of the Supabase-backed admin flow.
+
+Database fields:
+
+- `prayer_times.archived boolean default false`
+- `events.archived boolean default false`
+
+Behavior:
+
+- public display functions exclude archived rows
+- new prayer times are saved with `archived = false`
+- new events are saved with `archived = false`
+- archiving an active event removes it from the public display without hard-deleting it
+- permanent deletion is restricted to archived rows/items
+
+SQL migration file:
+
+- `database/cleanup-archive-old-data.sql`
+
+The SQL file:
+
+- enables `pg_cron`
+- adds `archived` columns if they do not exist
+- creates `public.archive_old_display_data()`
+- archives prayer times earlier than the first day of the current month
+- archives events older than 7 days after their event date/time
+- schedules the cleanup at `03:15 UTC` every day
+
+Manual run:
+
+```sql
+select public.archive_old_display_data();
+```
+
+Unschedule the cron job:
+
+```sql
+select cron.unschedule(jobid)
+from cron.job
+where jobname = 'archive-old-display-data';
+```
+
+Admin/archive function set:
+
+- `get-admin-prayer-times.js`
+- `get-admin-events.js`
+- `archive-event.js`
+- `restore-event.js`
+- `restore-prayer-times.js`
+- `permanently-delete-event.js`
+- `permanently-delete-prayer-times.js`
+
+`delete-event.js` is now only a compatibility wrapper that archives through `archive-event.js`.
+
+## Archive-aware data model additions
+
+Prayer-time example:
+
+```json
+{
+  "date": "2026-07-03",
+  "hijriDateArabic": "",
+  "hijriDateLatin": "",
+  "fajr": "01:44",
+  "sunrise": "04:32",
+  "dhuhr": "13:14",
+  "asr": "",
+  "sunset": "21:55",
+  "maghrib": "22:35",
+  "isha": "",
+  "midnight": "23:50",
+  "archived": false
+}
+```
+
+Event example:
+
+```json
+{
+  "id": "event-001",
+  "titleArabic": "Majlis",
+  "titleDanish": "Majlis",
+  "date": "2026-07-13",
+  "time": "19:30",
+  "active": true,
+  "archived": false
+}
+```
+
+## Archive notes for future backend work
+
+- keep the service role key inside Netlify Functions only
+- keep archive and restore actions server-side
+- add admin authentication before exposing archive management on a public deployment
+- consider moving cleanup into a protected RPC if you later centralize admin auth in Supabase
+
 ## Known limitations
 
 - theme is not yet synced through Supabase
-- admin does not yet load the full remote dataset for prayer times/events editing; remote sync is save-first, with local editing cache
+- admin now loads remote active and archived datasets when Supabase is reachable, but still keeps a browser-local cache for fallback
 - event images are still stored inline as data URLs
 - there is no authentication layer yet
+- archive management endpoints are still public until an auth layer is added
+- OCR still requires human review before saving
 
 ## Future improvements
 
@@ -667,4 +767,5 @@ Verify after changes:
 - move event images to Supabase Storage and store file URLs instead of data URLs
 - add admin authentication
 - add full remote list endpoints for prayer times and events
+- move archive management behind authenticated admin access
 - add audit history and rollback

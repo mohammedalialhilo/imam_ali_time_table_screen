@@ -163,6 +163,7 @@ function normalizePrayerRow(input = {}) {
     maghrib: normalizeOptionalString(input.maghrib),
     isha: normalizeOptionalString(input.isha),
     midnight: normalizeOptionalString(input.midnight),
+    archived: normalizeBoolean(input.archived, false),
   };
 }
 
@@ -235,7 +236,7 @@ function validatePrayerRows(rows = []) {
   };
 }
 
-function toPrayerDbRow(row) {
+function toPrayerDbRow(row, overrides = {}) {
   return {
     date: row.date,
     hijri_date_arabic: row.hijriDateArabic,
@@ -248,7 +249,9 @@ function toPrayerDbRow(row) {
     maghrib: row.maghrib,
     isha: row.isha,
     midnight: row.midnight,
+    archived: false,
     updated_at: new Date().toISOString(),
+    ...overrides,
   };
 }
 
@@ -275,6 +278,7 @@ function normalizeEventRow(input = {}) {
     imageDataUrl: normalizeImageValue(input.imageDataUrl ?? input.image_data_url),
     theme: normalizeOptionalString(input.theme) || "normal",
     active: normalizeBoolean(input.active, true),
+    archived: normalizeBoolean(input.archived, false),
     createdAt: normalizeIsoTimestamp(input.createdAt ?? input.created_at),
     updatedAt: normalizeIsoTimestamp(input.updatedAt ?? input.updated_at),
   };
@@ -307,7 +311,7 @@ function validateEventRow(row) {
   };
 }
 
-function toEventDbRow(row, existing = {}) {
+function toEventDbRow(row, existing = {}, overrides = {}) {
   const nowIso = new Date().toISOString();
   return {
     id: row.id || existing.id || createEventId(),
@@ -322,8 +326,10 @@ function toEventDbRow(row, existing = {}) {
     image_data_url: row.imageDataUrl,
     theme: row.theme || "normal",
     active: normalizeBoolean(row.active, true),
+    archived: false,
     created_at: existing.created_at || row.createdAt || nowIso,
     updated_at: nowIso,
+    ...overrides,
   };
 }
 

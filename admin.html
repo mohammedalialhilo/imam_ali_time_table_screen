@@ -472,12 +472,62 @@
             <ul class="note-list">
               <li>Upload the timetable image, wait for OCR, then correct the extracted text if needed.</li>
               <li>Check the preview table against the original image before saving.</li>
-              <li>Data is saved only on this browser and this device.</li>
+              <li>When Supabase is connected, prayer times and events can sync to deployed screens.</li>
               <li>If no local data exists, the display falls back to bundled sample data.</li>
             </ul>
             <p id="status-panel-note" class="status-line">
               The display page tries Supabase through Netlify Functions first, then local browser data, then sample fallback data.
             </p>
+          </article>
+
+          <article class="panel admin-panel archived-panel">
+            <div class="admin-panel-heading">
+              <div>
+                <h2>Archived data</h2>
+                <p>Old months and finished events stay out of the public display, but can be restored here.</p>
+              </div>
+            </div>
+            <div class="button-row archived-toolbar">
+              <button type="button" id="toggle-archived-prayer-times" class="button-secondary">
+                Show archived prayer times
+              </button>
+              <button type="button" id="toggle-archived-events" class="button-secondary">
+                Show archived events
+              </button>
+            </div>
+            <p id="archived-status" class="status-line">
+              Archived data will load here when Supabase is connected.
+            </p>
+
+            <section id="archived-prayer-times-section" class="archived-section" hidden>
+              <div class="admin-panel-heading compact-heading">
+                <div>
+                  <h3>Archived prayer times</h3>
+                  <p>Restore a full month or an individual day. Permanent delete is available only here.</p>
+                </div>
+                <span id="archived-prayer-count" class="info-pill">0 rows</span>
+              </div>
+              <div id="archived-prayer-times-list" class="archived-list">
+                <div class="saved-events-empty">
+                  No archived prayer times are available.
+                </div>
+              </div>
+            </section>
+
+            <section id="archived-events-section" class="archived-section" hidden>
+              <div class="admin-panel-heading compact-heading">
+                <div>
+                  <h3>Archived events</h3>
+                  <p>Restore an event or permanently delete it after confirmation.</p>
+                </div>
+                <span id="archived-event-count" class="info-pill">0 events</span>
+              </div>
+              <div id="archived-events-list" class="saved-events-list archived-list">
+                <div class="saved-events-empty">
+                  No archived events are available.
+                </div>
+              </div>
+            </section>
           </article>
 
           <article class="panel admin-panel danger-panel">

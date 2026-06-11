@@ -44,7 +44,7 @@ exports.handler = async function handler(event) {
 
     const { data, error } = await supabase
       .from("prayer_times")
-      .upsert(validation.items.map(toPrayerDbRow), { onConflict: "date" })
+      .upsert(validation.items.map((row) => toPrayerDbRow(row, { archived: false })), { onConflict: "date" })
       .select("*");
 
     if (error) {

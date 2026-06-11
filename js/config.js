@@ -119,9 +119,16 @@ export const APP_CONFIG = {
   apiPaths: {
     todayPrayerTimes: "/.netlify/functions/get-today-prayer-times",
     upcomingEvent: "/.netlify/functions/get-upcoming-event",
+    adminPrayerTimes: "/.netlify/functions/get-admin-prayer-times",
+    adminEvents: "/.netlify/functions/get-admin-events",
     savePrayerTimes: "/.netlify/functions/save-prayer-times",
     saveEvent: "/.netlify/functions/save-event",
+    archiveEvent: "/.netlify/functions/archive-event",
     deleteEvent: "/.netlify/functions/delete-event",
+    restoreEvent: "/.netlify/functions/restore-event",
+    restorePrayerTimes: "/.netlify/functions/restore-prayer-times",
+    permanentlyDeleteEvent: "/.netlify/functions/permanently-delete-event",
+    permanentlyDeletePrayerTimes: "/.netlify/functions/permanently-delete-prayer-times",
   },
   syncMessages: {
     connected: "Connected to Supabase. Updates will sync to mosque screens.",

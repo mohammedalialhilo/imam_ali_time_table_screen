@@ -552,6 +552,12 @@ body[data-page="admin"]::after {
   padding-inline: 0.95rem;
 }
 
+.button-warning {
+  background: rgb(236 179 38 / 0.16);
+  border-color: rgb(236 179 38 / 0.3);
+  color: #ffd37c;
+}
+
 .manual-json-section[hidden] {
   display: none !important;
 }
@@ -712,6 +718,63 @@ body[data-page="admin"]::after {
   gap: 0.75rem;
 }
 
+.archived-panel,
+.archived-section,
+.archived-list,
+.archived-group,
+.archived-prayer-rows {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.archived-toolbar {
+  margin-bottom: 0.3rem;
+}
+
+.archived-section[hidden] {
+  display: none !important;
+}
+
+.archived-group {
+  padding: 0.95rem;
+  border-radius: 1rem;
+  border: 1px solid rgb(var(--accent-rgb) / 0.14);
+  background: rgb(255 255 255 / 0.03);
+}
+
+.archived-group-header,
+.archived-prayer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.archived-group-header h4,
+.archived-prayer-copy p,
+.archived-prayer-copy strong {
+  margin: 0;
+}
+
+.archived-group-header p,
+.archived-prayer-copy p {
+  margin-top: 0.2rem;
+  color: var(--text-muted);
+}
+
+.archived-prayer-row {
+  padding-top: 0.8rem;
+  border-top: 1px solid rgb(var(--accent-rgb) / 0.1);
+}
+
+.archived-actions {
+  justify-content: end;
+}
+
+.archived-event-card {
+  border-style: dashed;
+}
+
 .button-secondary {
   background: rgb(255 255 255 / 0.04);
 }
@@ -772,7 +835,9 @@ body[data-page="admin"]::after {
   }
 
   .event-form-columns,
-  .saved-event-card {
+  .saved-event-card,
+  .archived-group-header,
+  .archived-prayer-row {
     grid-template-columns: 1fr;
   }
 
