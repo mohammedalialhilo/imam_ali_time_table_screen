@@ -1318,3 +1318,54 @@
     padding: 0.28rem 0.38rem;
   }
 }
+
+@media (min-aspect-ratio: 1/1) and (max-aspect-ratio: 4/3) and (max-height: 1000px) {
+  .prayer-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: minmax(0, 1fr);
+  }
+
+  .prayer-card {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    text-align: center;
+    gap: 0.18rem;
+    padding: 0.26rem 0.3rem 0.34rem;
+  }
+
+  .prayer-item-copy {
+    justify-items: center;
+  }
+
+  .prayer-name-ar {
+    font-size: clamp(0.82rem, min(1.45vw, 1.12svh), 1.02rem);
+  }
+
+  .prayer-name-da {
+    font-size: clamp(0.64rem, min(0.95vw, 0.8svh), 0.74rem);
+  }
+
+  .prayer-time {
+    min-width: 0;
+    text-align: center;
+    font-size: clamp(0.94rem, min(1.85vw, 1.45svh), 1.24rem);
+  }
+
+  .event-layout {
+    grid-template-columns: minmax(3rem, 3.55rem) minmax(0, 1.1fr) minmax(8.3rem, 0.88fr) minmax(5.5rem, 0.6fr);
+  }
+
+  .event-media {
+    min-height: 100%;
+  }
+
+  .event-title {
+    font-size: clamp(0.92rem, min(1.55vw, 1.28svh), 1.28rem);
+  }
+
+  .event-subtitle,
+  .event-meta-value,
+  .event-hijri-short {
+    font-size: clamp(0.64rem, min(0.95vw, 0.78svh), 0.76rem);
+  }
+}

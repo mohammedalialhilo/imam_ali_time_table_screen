@@ -12,9 +12,11 @@ import {
   validateEventsArray,
 } from "./events.js";
 import {
+  cleanupTimetableText,
   IMPORT_MONTH_OPTIONS,
   SAMPLE_TIMETABLE_TEXT,
   importedRowsToPrayerEntries,
+  normalizeLooseTime,
   parseTimetableText,
   summarizeImportedRows,
   validateImportedPrayerRows,
@@ -48,15 +50,15 @@ const MAX_EVENT_IMAGE_BYTES = 2 * 1024 * 1024;
 const ALLOWED_EVENT_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 const PREVIEW_FIELDS = [
-  { key: "date", label: "Date" },
-  { key: "fajr", label: "Fajr / Subh" },
-  { key: "sunrise", label: "Sunrise / Solopgang" },
-  { key: "dhuhr", label: "Dhuhr" },
-  { key: "asr", label: "Asr (optional)" },
-  { key: "sunset", label: "Sunset / Solnedgang" },
-  { key: "maghrib", label: "Maghrib" },
-  { key: "isha", label: "Isha (optional)" },
-  { key: "midnight", label: "Midnight / Midnat" },
+  { key: "date", label: "Date", shortLabel: "Date", placeholder: "2026-07-03", inputMode: "numeric", columnClass: "preview-col-date" },
+  { key: "fajr", label: "Fajr / Subh", shortLabel: "Fajr", placeholder: "01:44", inputMode: "numeric", columnClass: "preview-col-fajr" },
+  { key: "sunrise", label: "Sunrise / Solopgang", shortLabel: "Sunrise", placeholder: "04:32", inputMode: "numeric", columnClass: "preview-col-sunrise" },
+  { key: "dhuhr", label: "Dhuhr", shortLabel: "Dhuhr", placeholder: "13:14", inputMode: "numeric", columnClass: "preview-col-dhuhr" },
+  { key: "asr", label: "Asr (optional)", shortLabel: "Asr", placeholder: "17:39", inputMode: "numeric", columnClass: "preview-col-asr" },
+  { key: "sunset", label: "Sunset / Solnedgang", shortLabel: "Sunset", placeholder: "21:55", inputMode: "numeric", columnClass: "preview-col-sunset" },
+  { key: "maghrib", label: "Maghrib", shortLabel: "Maghrib", placeholder: "22:35", inputMode: "numeric", columnClass: "preview-col-maghrib" },
+  { key: "isha", label: "Isha (optional)", shortLabel: "Isha", placeholder: "23:43", inputMode: "numeric", columnClass: "preview-col-isha" },
+  { key: "midnight", label: "Midnight / Midnat", shortLabel: "Midnight", placeholder: "23:50", inputMode: "numeric", columnClass: "preview-col-midnight" },
 ];
 
 const elements = {
@@ -88,7 +90,6 @@ const elements = {
   validateEvents: document.querySelector("#validate-events"),
   saveEvents: document.querySelector("#save-events"),
   saveTheme: document.querySelector("#save-theme"),
-  refreshPreview: document.querySelector("#refresh-preview"),
   clearLocalData: document.querySelector("#clear-local-data"),
   clearPrayerTimes: document.querySelector("#clear-prayer-times"),
   clearEvents: document.querySelector("#clear-events"),
@@ -103,6 +104,9 @@ const elements = {
   parseTimetable: document.querySelector("#parse-timetable"),
   previewTableContainer: document.querySelector("#preview-table-container"),
   saveImportedPrayerTimes: document.querySelector("#save-imported-prayer-times"),
+  reparsePreview: document.querySelector("#reparse-preview"),
+  autoFixImportText: document.querySelector("#autofix-import-text"),
+  clearPreview: document.querySelector("#clear-preview"),
   parseSkippedContainer: document.querySelector("#parse-skipped-container"),
   parseSkippedLines: document.querySelector("#parse-skipped-lines"),
   toggleManualEntry: document.querySelector("#toggle-manual-entry"),
@@ -660,98 +664,258 @@ function renderSkippedLines(skippedLines = []) {
 
   elements.parseSkippedContainer.hidden = false;
   elements.parseSkippedLines.innerHTML = skippedLines
-    .map((item) => `<li><strong>Line ${item.lineNumber}:</strong> ${escapeHtml(item.rawLine)}</li>`)
+    .map((item) => `
+      <li>
+        <strong>Line ${item.lineNumber}:</strong> ${escapeHtml(item.rawLine)}
+        <span>${escapeHtml(item.reason || "Needs manual review.")}</span>
+      </li>
+    `)
     .join("");
 }
 
 function getPreviewFieldIssue(row, field) {
-  const joinedErrors = row.errors.join(" ").toLowerCase();
-  if (field === "date") {
-    return joinedErrors.includes("date");
+  return Array.isArray(row.fieldErrors?.[field]) && row.fieldErrors[field].length > 0;
+}
+
+function updatePreviewActionState() {
+  const hasImportText = Boolean(elements.importTextInput.value.trim());
+  const hasPreviewRows = state.previewRows.length > 0;
+  elements.reparsePreview.disabled = !hasImportText;
+  elements.autoFixImportText.disabled = !hasImportText;
+  elements.clearPreview.disabled = !hasPreviewRows;
+}
+
+function getPreviewFieldMessages(row, field) {
+  return row.fieldErrors?.[field] ?? [];
+}
+
+function buildPreviewInput(row, rowIndex, field, extraClass = "") {
+  const fieldMessages = getPreviewFieldMessages(row, field.key);
+  const invalidClass = fieldMessages.length > 0 ? " is-invalid" : "";
+  const titleAttribute = fieldMessages.length > 0
+    ? ` title="${escapeHtml(fieldMessages.join(" "))}"`
+    : "";
+
+  return `
+    <input
+      class="preview-input${invalidClass}${extraClass ? ` ${extraClass}` : ""}"
+      type="text"
+      value="${escapeHtml(row[field.key] ?? "")}"
+      placeholder="${escapeHtml(field.placeholder || "")}"
+      inputmode="${escapeHtml(field.inputMode || "text")}"
+      data-row-index="${rowIndex}"
+      data-field="${field.key}"${titleAttribute}
+    >
+  `;
+}
+
+function renderPreviewSummary(validation) {
+  if (validation.rows.length === 0) {
+    elements.previewSummary.innerHTML = `
+      <article class="preview-stat-card">
+        <p class="preview-stat-label">Parsed rows</p>
+        <p class="preview-stat-value">0</p>
+      </article>
+      <article class="preview-stat-card">
+        <p class="preview-stat-label">First date</p>
+        <p class="preview-stat-value">—</p>
+      </article>
+      <article class="preview-stat-card">
+        <p class="preview-stat-label">Last date</p>
+        <p class="preview-stat-value">—</p>
+      </article>
+      <article class="preview-stat-card preview-stat-card-errors">
+        <p class="preview-stat-label">Validation issues</p>
+        <p class="preview-stat-value">0</p>
+      </article>
+    `;
+    return;
   }
-  return joinedErrors.includes(field.toLowerCase());
+
+  const summary = summarizeImportedRows(validation.rows);
+  const errorCardClass = validation.errorCount > 0
+    ? "preview-stat-card preview-stat-card-errors has-errors"
+    : "preview-stat-card preview-stat-card-errors";
+
+  elements.previewSummary.innerHTML = `
+    <article class="preview-stat-card">
+      <p class="preview-stat-label">Parsed rows</p>
+      <p class="preview-stat-value">${summary.count}</p>
+    </article>
+    <article class="preview-stat-card">
+      <p class="preview-stat-label">First date</p>
+      <p class="preview-stat-value">${escapeHtml(summary.firstDate)}</p>
+    </article>
+    <article class="preview-stat-card">
+      <p class="preview-stat-label">Last date</p>
+      <p class="preview-stat-value">${escapeHtml(summary.lastDate)}</p>
+    </article>
+    <article class="${errorCardClass}">
+      <p class="preview-stat-label">Validation issues</p>
+      <p class="preview-stat-value">${validation.errorCount}</p>
+    </article>
+  `;
+}
+
+function renderPreviewValidationState(validation) {
+  if (validation.rows.length === 0) {
+    elements.previewErrors.className = "preview-validation-panel";
+    elements.previewErrors.innerHTML = `
+      <p class="preview-validation-title">Parse a timetable to see validation details here.</p>
+      <p class="preview-validation-copy">The preview becomes editable after parsing.</p>
+    `;
+    return;
+  }
+
+  if (validation.valid) {
+    elements.previewErrors.className = "preview-validation-panel is-success";
+    elements.previewErrors.innerHTML = `
+      <p class="preview-validation-title">All preview rows are valid and ready to save.</p>
+      <p class="preview-validation-copy">You can save the corrected timetable now.</p>
+    `;
+    return;
+  }
+
+  const issueItems = validation.rows
+    .flatMap((row, rowIndex) => row.errors.map((error) => {
+      const rowLabel = row.date ? `Row ${rowIndex + 1} (${row.date})` : `Row ${rowIndex + 1}`;
+      return `${rowLabel}: ${error}`;
+    }))
+    .slice(0, 4);
+
+  const hiddenIssueCount = Math.max(validation.errorCount - issueItems.length, 0);
+  elements.previewErrors.className = "preview-validation-panel is-error";
+  elements.previewErrors.innerHTML = `
+    <p class="preview-validation-title">${validation.errorCount} validation issues must be fixed before saving.</p>
+    <ul class="preview-validation-list">
+      ${issueItems.map((message) => `<li>${escapeHtml(message)}</li>`).join("")}
+      ${hiddenIssueCount > 0 ? `<li>And ${hiddenIssueCount} more issue${hiddenIssueCount === 1 ? "" : "s"}.</li>` : ""}
+    </ul>
+  `;
 }
 
 function renderPreviewTable() {
   if (state.previewRows.length === 0) {
     elements.previewTableContainer.innerHTML = `
       <div class="preview-empty-state">
-        Upload a timetable image or paste timetable text to build the editable preview table.
+        Upload a timetable image or paste timetable text to build the editable review table.
       </div>
     `;
+    updatePreviewActionState();
     return;
   }
 
-  const headerMarkup = PREVIEW_FIELDS.map((field) => `<th scope="col">${field.label}</th>`).join("");
-  const bodyMarkup = state.previewRows.map((row, rowIndex) => {
-    const fieldCells = PREVIEW_FIELDS.map((field) => {
-      const invalidClass = getPreviewFieldIssue(row, field.key) ? " is-invalid" : "";
-      return `
-        <td>
-          <input
-            class="preview-input${invalidClass}"
-            type="text"
-            value="${escapeHtml(row[field.key] ?? "")}"
-            data-row-index="${rowIndex}"
-            data-field="${field.key}"
-          >
-        </td>
-      `;
-    }).join("");
+  const headerMarkup = PREVIEW_FIELDS
+    .map((field) => `<th scope="col" class="${field.columnClass}" data-field="${field.key}">${field.label}</th>`)
+    .join("");
+  const colMarkup = PREVIEW_FIELDS
+    .map((field) => `<col class="${field.columnClass}">`)
+    .join("");
+
+  const tableBodyMarkup = state.previewRows.map((row, rowIndex) => {
+    const fieldCells = PREVIEW_FIELDS.map((field) => `
+      <td class="${field.columnClass}" data-field="${field.key}">
+        ${buildPreviewInput(row, rowIndex, field)}
+      </td>
+    `).join("");
 
     const statusClass = row.errors.length > 0 ? "preview-status-text is-error" : "preview-status-text";
     const statusText = row.errors.length > 0
       ? row.statusText
-      : `Ready. Source line ${row.sourceLineNumber || "--"}.`;
+      : `Valid. Source line ${row.sourceLineNumber || "--"}.`;
 
     return `
       <tr class="${row.errors.length > 0 ? "preview-row-error" : ""}">
         ${fieldCells}
-        <td>
+        <td class="preview-col-status" data-field="status">
           <p class="${statusClass}" title="${escapeHtml(row.sourceLine || "")}">${escapeHtml(statusText)}</p>
         </td>
       </tr>
     `;
   }).join("");
 
+  const cardMarkup = state.previewRows.map((row, rowIndex) => {
+    const statusText = row.errors.length > 0
+      ? row.statusText
+      : `Valid. Source line ${row.sourceLineNumber || "--"}.`;
+    const cardFields = PREVIEW_FIELDS.map((field) => `
+      <label class="preview-card-field" data-field="${field.key}">
+        <span class="preview-card-label">${field.label}</span>
+        ${buildPreviewInput(row, rowIndex, field, "preview-input-card")}
+      </label>
+    `).join("");
+
+    return `
+      <article class="preview-card${row.errors.length > 0 ? " is-error" : ""}">
+        <div class="preview-card-header">
+          <div>
+            <p class="preview-card-kicker">Preview row ${rowIndex + 1}</p>
+            <h3 class="preview-card-title">${escapeHtml(row.date || "Missing date")}</h3>
+            <p class="preview-card-source">Source line ${row.sourceLineNumber || "--"}</p>
+          </div>
+          <span class="preview-card-badge${row.errors.length > 0 ? " is-error" : ""}">
+            ${row.errors.length > 0 ? "Needs fixes" : "Valid"}
+          </span>
+        </div>
+        <div class="preview-card-grid">
+          ${cardFields}
+        </div>
+        <p class="preview-status-text${row.errors.length > 0 ? " is-error" : ""}" title="${escapeHtml(row.sourceLine || "")}">
+          ${escapeHtml(statusText)}
+        </p>
+      </article>
+    `;
+  }).join("");
+
   elements.previewTableContainer.innerHTML = `
-    <table class="preview-table">
-      <thead>
-        <tr>
-          ${headerMarkup}
-          <th scope="col">Status</th>
-        </tr>
-      </thead>
-      <tbody>${bodyMarkup}</tbody>
-    </table>
+    <div class="preview-table-wrap">
+      <table class="preview-table">
+        <colgroup>
+          ${colMarkup}
+          <col class="preview-col-status">
+        </colgroup>
+        <thead>
+          <tr>
+            ${headerMarkup}
+            <th scope="col" class="preview-col-status">Status</th>
+          </tr>
+        </thead>
+        <tbody>${tableBodyMarkup}</tbody>
+      </table>
+    </div>
+    <div class="preview-card-list">
+      ${cardMarkup}
+    </div>
   `;
+  updatePreviewActionState();
+}
+
+function focusVisiblePreviewInput(rowIndex, field, selectionStart = null, selectionEnd = null, scrollLeft = 0) {
+  const previewWrap = elements.previewTableContainer.querySelector(".preview-table-wrap");
+  if (previewWrap) {
+    previewWrap.scrollLeft = scrollLeft;
+  }
+
+  const matchingInput = [...elements.previewTableContainer.querySelectorAll(
+    `input[data-row-index="${rowIndex}"][data-field="${field}"]`,
+  )].find((input) => input.offsetParent !== null);
+
+  if (!(matchingInput instanceof HTMLInputElement)) {
+    return;
+  }
+
+  matchingInput.focus({ preventScroll: true });
+  if (typeof selectionStart === "number" && typeof selectionEnd === "number") {
+    matchingInput.setSelectionRange(selectionStart, selectionEnd);
+  }
 }
 
 function refreshPreviewValidation() {
   const validation = validateImportedPrayerRows(state.previewRows);
   state.previewRows = validation.rows;
-
-  const summary = summarizeImportedRows(validation.rows.filter((row) => row.date));
-  setText(
-    elements.previewSummary,
-    validation.rows.length > 0
-      ? `Preview rows: ${summary.count}. First date: ${summary.firstDate}. Last date: ${summary.lastDate}.`
-      : "No timetable parsed yet.",
-  );
-
-  if (validation.rows.length === 0) {
-    setStatus(elements.previewErrors, "Parse a timetable to see validation details here.");
-  } else if (validation.valid) {
-    setStatus(elements.previewErrors, "All preview rows are valid and ready to save.", "success");
-  } else {
-    setStatus(
-      elements.previewErrors,
-      `${validation.errorCount} validation issues must be fixed before saving.`,
-      "error",
-    );
-  }
-
   elements.saveImportedPrayerTimes.disabled = !validation.valid;
+  renderPreviewSummary(validation);
+  renderPreviewValidationState(validation);
   renderPreviewTable();
 }
 
@@ -778,7 +942,7 @@ function parseImportText() {
   setStatus(
     elements.importSaveStatus,
     parseResult.rows.length > 0
-      ? "Preview updated. Review every row, then save imported prayer times."
+      ? "Preview updated. Review and correct every row before saving."
       : "Imported prayer times are not saved yet.",
     parseResult.rows.length > 0 ? "warning" : "",
   );
@@ -794,6 +958,42 @@ function parseImportText() {
   }
 
   setStatus(elements.parseStatus, `${parseResult.message} Fix highlighted rows before saving.`, "warning");
+}
+
+function clearPreviewState(options = {}) {
+  state.previewRows = [];
+  refreshPreviewValidation();
+
+  if (!options.preserveSkippedLines) {
+    renderSkippedLines([]);
+  }
+
+  if (!options.preserveStatus) {
+    setStatus(elements.importSaveStatus, "Preview cleared. Re-parse the text when you are ready.", "warning");
+    setStatus(elements.parseStatus, "Preview cleared. Parse the timetable again to rebuild the review step.", "warning");
+  }
+}
+
+function autoFixImportText() {
+  const rawText = elements.importTextInput.value.trim();
+  if (!rawText) {
+    setStatus(elements.parseStatus, "Paste timetable text or run OCR before using auto-fix.", "error");
+    return;
+  }
+
+  const cleanedText = cleanupTimetableText(rawText);
+  if (!cleanedText) {
+    elements.importTextInput.value = "";
+    clearPreviewState({ preserveStatus: true });
+    setStatus(elements.parseStatus, "Auto-fix removed the unreadable lines. Paste or OCR the timetable again.", "warning");
+    setStatus(elements.importSaveStatus, "Imported prayer times are not saved yet.");
+    return;
+  }
+
+  elements.importTextInput.value = cleanedText;
+  setStatus(elements.parseStatus, "Common OCR issues were cleaned up. Review the text, then re-parse it.", "success");
+  setStatus(elements.generalStatus, "OCR text cleaned up. Re-parse the timetable to refresh the preview.", "warning");
+  updatePreviewActionState();
 }
 
 function populateImportSample() {
@@ -835,6 +1035,7 @@ async function persistPrayerDataset(prayerEntries, successMessage) {
   if (remoteResult.ok && localSaved) {
     return {
       ok: true,
+      remoteSaved: true,
       localSaved: true,
       tone: "success",
       detail: successMessage,
@@ -845,6 +1046,7 @@ async function persistPrayerDataset(prayerEntries, successMessage) {
   if (remoteResult.ok) {
     return {
       ok: true,
+      remoteSaved: true,
       localSaved: false,
       tone: "warning",
       detail: `${successMessage} Supabase was updated, but this browser could not update its local cache.`,
@@ -855,6 +1057,7 @@ async function persistPrayerDataset(prayerEntries, successMessage) {
   if (localSaved) {
     return {
       ok: true,
+      remoteSaved: false,
       localSaved: true,
       tone: "warning",
       detail: `${successMessage} Saved in this browser only.`,
@@ -865,6 +1068,7 @@ async function persistPrayerDataset(prayerEntries, successMessage) {
 
   return {
     ok: false,
+    remoteSaved: false,
     localSaved: false,
     tone: "error",
     detail: "Could not save prayer times locally or remotely.",
@@ -878,8 +1082,8 @@ async function saveImportedPrayerRows() {
   refreshPreviewValidation();
 
   if (!validation.valid) {
-    setStatus(elements.importSaveStatus, "Imported rows contain validation errors and cannot be saved yet.", "error");
-    setStatus(elements.generalStatus, "Fix the highlighted preview rows before saving imported prayer times.", "error");
+    setStatus(elements.importSaveStatus, "Highlighted preview rows still need fixes before saving.", "error");
+    setStatus(elements.generalStatus, "Fix the highlighted preview rows before saving the corrected timetable.", "error");
     return;
   }
 
@@ -893,14 +1097,35 @@ async function saveImportedPrayerRows() {
     `Saved ${validation.rows.length} imported prayer-time rows. The merged dataset now has ${mergedPrayerEntries.length} day entries.`,
   );
 
-  setStatus(elements.importSaveStatus, persistence.detail, persistence.tone);
-  setStatus(elements.generalStatus, persistence.general, persistence.ok ? persistence.tone : "error");
+  if (persistence.remoteSaved) {
+    setStatus(
+      elements.importSaveStatus,
+      "Saved to Supabase. Mosque screens will update automatically.",
+      persistence.tone,
+    );
+    setStatus(
+      elements.generalStatus,
+      `Saved ${validation.rows.length} corrected timetable rows to the shared dataset.`,
+      persistence.tone,
+    );
+  } else if (persistence.localSaved) {
+    setStatus(
+      elements.importSaveStatus,
+      "Saved locally only. This will not update mosque screens until Supabase is connected.",
+      "warning",
+    );
+    setStatus(elements.generalStatus, persistence.general, "warning");
+  } else {
+    setStatus(elements.importSaveStatus, persistence.detail, "error");
+    setStatus(elements.generalStatus, persistence.general, "error");
+  }
+
   setStatus(
     elements.prayerTimesStatus,
     persistence.localSaved
       ? "Manual JSON editor updated with the saved merged prayer-time dataset."
       : "Manual JSON editor could not be updated because the browser copy was not saved.",
-    persistence.localSaved ? persistence.tone : "error",
+    persistence.localSaved ? persistence.tone : (persistence.remoteSaved ? "warning" : "error"),
   );
 }
 
@@ -958,6 +1183,7 @@ async function runOcrForCurrentImage() {
 
     const extractedText = String(result?.data?.text ?? "").trim();
     elements.importTextInput.value = extractedText;
+    updatePreviewActionState();
 
     if (!extractedText) {
       setStatus(
@@ -996,6 +1222,20 @@ function handleImageSelection() {
   runOcrForCurrentImage();
 }
 
+function normalizePreviewCellValue(field, value, eventType) {
+  const rawValue = String(value ?? "");
+  if (field === "date") {
+    return rawValue.trim();
+  }
+
+  if (eventType === "change") {
+    const normalized = normalizeLooseTime(rawValue);
+    return normalized || rawValue.trim();
+  }
+
+  return rawValue;
+}
+
 function updatePreviewCell(event) {
   const target = event.target;
   if (!(target instanceof HTMLInputElement)) {
@@ -1008,12 +1248,21 @@ function updatePreviewCell(event) {
     return;
   }
 
+  const selectionStart = target.selectionStart;
+  const selectionEnd = target.selectionEnd;
+  const scrollLeft = elements.previewTableContainer.querySelector(".preview-table-wrap")?.scrollLeft ?? 0;
+  const nextValue = normalizePreviewCellValue(field, target.value, event.type);
+  if (target.value !== nextValue) {
+    target.value = nextValue;
+  }
+
   state.previewRows[rowIndex] = {
     ...state.previewRows[rowIndex],
-    [field]: target.value,
+    [field]: nextValue,
   };
   refreshPreviewValidation();
-  setStatus(elements.importSaveStatus, "Preview changed. Save again after reviewing the updated rows.", "warning");
+  focusVisiblePreviewInput(rowIndex, field, selectionStart, selectionEnd, scrollLeft);
+  setStatus(elements.importSaveStatus, "Preview changed. Save the corrected timetable after reviewing the updated rows.", "warning");
 }
 
 function validatePrayerTextarea() {
@@ -1974,16 +2223,15 @@ function bindEvents() {
     setStatus(elements.generalStatus, "Theme saved. index.html will use the selected theme in this browser.", "success");
   });
 
-  elements.refreshPreview.addEventListener("click", () => {
-    refreshStatusPanel();
-    refreshPreviewValidation();
-    renderSavedEvents();
-    setStatus(elements.generalStatus, "Status and preview validation refreshed.", "success");
-  });
-
   elements.imageInput.addEventListener("change", handleImageSelection);
   elements.runOcrButton.addEventListener("click", () => {
     runOcrForCurrentImage();
+  });
+  elements.importTextInput.addEventListener("input", () => {
+    updatePreviewActionState();
+    if (state.previewRows.length > 0) {
+      setStatus(elements.parseStatus, "Timetable text changed. Click Parse timetable or Re-parse text to refresh the preview.", "warning");
+    }
   });
   elements.useSampleImportText.addEventListener("click", () => {
     populateImportSample();
@@ -1991,6 +2239,15 @@ function bindEvents() {
   });
   elements.parseTimetable.addEventListener("click", () => {
     parseImportText();
+  });
+  elements.reparsePreview.addEventListener("click", () => {
+    parseImportText();
+  });
+  elements.autoFixImportText.addEventListener("click", () => {
+    autoFixImportText();
+  });
+  elements.clearPreview.addEventListener("click", () => {
+    clearPreviewState({ preserveSkippedLines: true });
   });
   elements.previewTableContainer.addEventListener("input", updatePreviewCell);
   elements.previewTableContainer.addEventListener("change", updatePreviewCell);

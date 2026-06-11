@@ -1,7 +1,7 @@
 const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const STRICT_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const HEADER_TOKENS = ["ugedag", "date", "subh", "solopgang", "dhuhr", "solnedgang", "maghrib", "midnat"];
-const DANISH_WEEKDAYS = ["mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag", "søndag"];
+const DANISH_WEEKDAYS = ["mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag", "søndag", "lordag", "sondag"];
 
 export const IMPORT_MONTH_OPTIONS = [
   { value: 1, label: "January / Januar" },
@@ -72,25 +72,59 @@ function isRealCalendarDate(year, month, day) {
   );
 }
 
+function simplifyTextForMatching(value = "") {
+  return String(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function containsDanishWeekday(line = "") {
+  const simplified = simplifyTextForMatching(line);
+  return DANISH_WEEKDAYS.some((weekday) => simplified.includes(simplifyTextForMatching(weekday)));
+}
+
 function normalizeTextLine(rawLine = "") {
   return String(rawLine)
+    .normalize("NFKC")
+    .replace(/\u00A0/g, " ")
     .replace(/\t+/g, " ")
-    .replace(/[;,|]+/g, " ")
+    .replace(/\b(\d{1,2})\s*[.,]\s*(\d{2})\b/g, "$1:$2")
+    .replace(/\b(\d{1,2})\s*:\s*(\d{2})\b/g, "$1:$2")
+    .replace(/(\d{1,2}:\d{2})[,;]+/g, "$1")
+    .replace(/[|]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
 function looksLikeHeader(line) {
-  const lower = line.toLowerCase();
+  const lower = simplifyTextForMatching(line);
   const matches = HEADER_TOKENS.filter((token) => lower.includes(token)).length;
   return matches >= 3;
+}
+
+function looksLikeNoiseLine(line = "") {
+  const lower = simplifyTextForMatching(line);
+  if (!lower) {
+    return true;
+  }
+
+  return (
+    /(?:^|\s)\d{1,3}%/.test(lower) ||
+    lower.includes("bedetider") ||
+    lower.includes("kobenhavn") ||
+    lower.includes("imam ali moske") ||
+    /^jul\s*\d{4}$/.test(lower)
+  );
 }
 
 function cleanTimeCandidate(value = "") {
   return String(value)
     .trim()
     .replace(/[oO]/g, "0")
+    .replace(/[,;]+$/g, "")
     .replace(/[.,]/g, ":")
+    .replace(/\s*:\s*/g, ":")
     .replace(/\s+/g, "");
 }
 
@@ -148,7 +182,35 @@ function extractTimeTokens(line) {
 }
 
 function shouldRecordSkippedLine(line, timeTokens) {
-  return /\d/.test(line) && timeTokens.length > 0;
+  if (looksLikeHeader(line) || looksLikeNoiseLine(line)) {
+    return false;
+  }
+
+  return containsDanishWeekday(line) || (/\d/.test(line) && timeTokens.length >= 4);
+}
+
+function getSkippedLineReason(hasWeekday, dayNumber, timeTokens) {
+  if (!hasWeekday) {
+    return "Could not detect a Danish weekday on this line.";
+  }
+
+  if (!dayNumber) {
+    return "Could not detect a usable day number on this line.";
+  }
+
+  if (timeTokens.length < 5) {
+    return "Could not detect enough prayer-time values on this line.";
+  }
+
+  return "This line needs manual review before it can be parsed.";
+}
+
+export function cleanupTimetableText(rawText = "") {
+  return String(rawText ?? "")
+    .split(/\r?\n/)
+    .map((line) => normalizeTextLine(line))
+    .filter((line) => line && !looksLikeHeader(line) && !looksLikeNoiseLine(line))
+    .join("\n");
 }
 
 export function createEmptyImportedPrayerRow(overrides = {}) {
@@ -166,6 +228,7 @@ export function createEmptyImportedPrayerRow(overrides = {}) {
     midnight: "",
     sourceLine: "",
     sourceLineNumber: 0,
+    fieldErrors: {},
     errors: [],
     statusText: "Klar til gennemgang / جاهز للمراجعة",
     ...overrides,
@@ -187,6 +250,7 @@ function normalizeImportedRow(row = {}) {
     midnight: normalizeLooseTime(row.midnight),
     sourceLine: String(row.sourceLine ?? "").trim(),
     sourceLineNumber: Number(row.sourceLineNumber ?? 0) || 0,
+    fieldErrors: typeof row.fieldErrors === "object" && row.fieldErrors !== null ? row.fieldErrors : {},
   });
 
   return normalized;
@@ -194,15 +258,24 @@ function normalizeImportedRow(row = {}) {
 
 function getRowErrors(row) {
   const errors = [];
+  const fieldErrors = {};
   const requiredFields = ["date", "fajr", "sunrise", "dhuhr", "sunset", "maghrib", "midnight"];
   const optionalTimeFields = ["asr", "isha"];
 
+  function addFieldError(field, message) {
+    errors.push(message);
+    if (!fieldErrors[field]) {
+      fieldErrors[field] = [];
+    }
+    fieldErrors[field].push(message);
+  }
+
   if (!isDateKey(row.date)) {
-    errors.push("Date must use YYYY-MM-DD.");
+    addFieldError("date", "Date must use YYYY-MM-DD.");
   } else {
     const [year, month, day] = row.date.split("-").map(Number);
     if (!isRealCalendarDate(year, month, day)) {
-      errors.push("Date is not a real calendar date.");
+      addFieldError("date", "Date is not a real calendar date.");
     }
   }
 
@@ -210,17 +283,20 @@ function getRowErrors(row) {
     .filter((field) => field !== "date")
     .forEach((field) => {
       if (!isStrictTime(row[field])) {
-        errors.push(`${field} must use HH:mm.`);
+        addFieldError(field, `${field} must use HH:mm.`);
       }
     });
 
   optionalTimeFields.forEach((field) => {
     if (row[field] && !isStrictTime(row[field])) {
-      errors.push(`${field} must use HH:mm or stay empty.`);
+      addFieldError(field, `${field} must use HH:mm or stay empty.`);
     }
   });
 
-  return errors;
+  return {
+    errors,
+    fieldErrors,
+  };
 }
 
 export function validateImportedPrayerRows(rows = []) {
@@ -234,13 +310,18 @@ export function validateImportedPrayerRows(rows = []) {
   });
 
   const decoratedRows = normalizedRows.map((row) => {
-    const errors = getRowErrors(row);
+    const { errors, fieldErrors } = getRowErrors(row);
     if (row.date && duplicateMap.get(row.date) > 1) {
+      if (!fieldErrors.date) {
+        fieldErrors.date = [];
+      }
+      fieldErrors.date.push("Date is duplicated in the preview.");
       errors.push("Date is duplicated in the preview.");
     }
 
     return {
       ...row,
+      fieldErrors,
       errors,
       statusText: errors.length > 0
         ? errors.join(" ")
@@ -276,28 +357,29 @@ export function parseTimetableText(rawText, options = {}) {
 
   lines.forEach((rawLine, index) => {
     const normalizedLine = normalizeTextLine(rawLine);
-    if (!normalizedLine || looksLikeHeader(normalizedLine)) {
+    if (!normalizedLine || looksLikeHeader(normalizedLine) || looksLikeNoiseLine(normalizedLine)) {
       return;
     }
 
     const firstTimeMatch = normalizedLine.match(/\b[0-2]?\d\s*[:.]\s*\d{2}\b/);
     const firstTimeIndex = firstTimeMatch?.index ?? -1;
+    const hasWeekday = containsDanishWeekday(normalizedLine);
     const dayNumber = extractDayNumber(normalizedLine, firstTimeIndex);
     const timeTokens = extractTimeTokens(normalizedLine);
 
-    if (!dayNumber || timeTokens.length < 5) {
+    if (!hasWeekday || timeTokens.length < 5) {
       if (shouldRecordSkippedLine(normalizedLine, timeTokens)) {
         skippedLines.push({
           lineNumber: index + 1,
           rawLine: normalizedLine,
-          reason: "Could not find a usable day number and timetable values on this line.",
+          reason: getSkippedLineReason(hasWeekday, dayNumber, timeTokens),
         });
       }
       return;
     }
 
     const row = createEmptyImportedPrayerRow({
-      date: buildDateKey(safeYear, safeMonth, dayNumber),
+      date: dayNumber ? buildDateKey(safeYear, safeMonth, dayNumber) : "",
       fajr: timeTokens[0] ?? "",
       sunrise: timeTokens[1] ?? "",
       dhuhr: timeTokens[2] ?? "",
@@ -348,10 +430,12 @@ export function summarizeImportedRows(rows = []) {
     };
   }
 
-  const ordered = [...rows].sort((left, right) => left.date.localeCompare(right.date));
+  const ordered = rows
+    .filter((row) => isDateKey(row.date))
+    .sort((left, right) => left.date.localeCompare(right.date));
   return {
-    count: ordered.length,
-    firstDate: ordered[0].date,
-    lastDate: ordered[ordered.length - 1].date,
+    count: rows.length,
+    firstDate: ordered[0]?.date ?? "—",
+    lastDate: ordered[ordered.length - 1]?.date ?? "—",
   };
 }

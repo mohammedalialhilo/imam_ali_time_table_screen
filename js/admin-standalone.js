@@ -1327,7 +1327,7 @@
   var DATE_KEY_PATTERN2 = /^\d{4}-\d{2}-\d{2}$/;
   var STRICT_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
   var HEADER_TOKENS = ["ugedag", "date", "subh", "solopgang", "dhuhr", "solnedgang", "maghrib", "midnat"];
-  var DANISH_WEEKDAYS = ["mandag", "tirsdag", "onsdag", "torsdag", "fredag", "l\xF8rdag", "s\xF8ndag"];
+  var DANISH_WEEKDAYS = ["mandag", "tirsdag", "onsdag", "torsdag", "fredag", "l\xF8rdag", "s\xF8ndag", "lordag", "sondag"];
   var IMPORT_MONTH_OPTIONS = [
     { value: 1, label: "January / Januar" },
     { value: 2, label: "February / Februar" },
@@ -1387,16 +1387,30 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     const candidate = new Date(year, month - 1, day, 12, 0, 0, 0);
     return candidate.getFullYear() === year && candidate.getMonth() === month - 1 && candidate.getDate() === day;
   }
+  function simplifyTextForMatching(value = "") {
+    return String(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+  function containsDanishWeekday(line = "") {
+    const simplified = simplifyTextForMatching(line);
+    return DANISH_WEEKDAYS.some((weekday) => simplified.includes(simplifyTextForMatching(weekday)));
+  }
   function normalizeTextLine(rawLine = "") {
-    return String(rawLine).replace(/\t+/g, " ").replace(/[;,|]+/g, " ").replace(/\s+/g, " ").trim();
+    return String(rawLine).normalize("NFKC").replace(/\u00A0/g, " ").replace(/\t+/g, " ").replace(/\b(\d{1,2})\s*[.,]\s*(\d{2})\b/g, "$1:$2").replace(/\b(\d{1,2})\s*:\s*(\d{2})\b/g, "$1:$2").replace(/(\d{1,2}:\d{2})[,;]+/g, "$1").replace(/[|]+/g, " ").replace(/\s+/g, " ").trim();
   }
   function looksLikeHeader(line) {
-    const lower = line.toLowerCase();
+    const lower = simplifyTextForMatching(line);
     const matches = HEADER_TOKENS.filter((token) => lower.includes(token)).length;
     return matches >= 3;
   }
+  function looksLikeNoiseLine(line = "") {
+    const lower = simplifyTextForMatching(line);
+    if (!lower) {
+      return true;
+    }
+    return /(?:^|\s)\d{1,3}%/.test(lower) || lower.includes("bedetider") || lower.includes("kobenhavn") || lower.includes("imam ali moske") || /^jul\s*\d{4}$/.test(lower);
+  }
   function cleanTimeCandidate(value = "") {
-    return String(value).trim().replace(/[oO]/g, "0").replace(/[.,]/g, ":").replace(/\s+/g, "");
+    return String(value).trim().replace(/[oO]/g, "0").replace(/[,;]+$/g, "").replace(/[.,]/g, ":").replace(/\s*:\s*/g, ":").replace(/\s+/g, "");
   }
   function normalizeLooseTime(value = "") {
     const cleaned = cleanTimeCandidate(value);
@@ -1441,7 +1455,25 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     return [...line.matchAll(/\b[0-2]?\d\s*[:.]\s*\d{2}\b/g)].map((match) => normalizeLooseTime(match[0])).filter(Boolean);
   }
   function shouldRecordSkippedLine(line, timeTokens) {
-    return /\d/.test(line) && timeTokens.length > 0;
+    if (looksLikeHeader(line) || looksLikeNoiseLine(line)) {
+      return false;
+    }
+    return containsDanishWeekday(line) || /\d/.test(line) && timeTokens.length >= 4;
+  }
+  function getSkippedLineReason(hasWeekday, dayNumber, timeTokens) {
+    if (!hasWeekday) {
+      return "Could not detect a Danish weekday on this line.";
+    }
+    if (!dayNumber) {
+      return "Could not detect a usable day number on this line.";
+    }
+    if (timeTokens.length < 5) {
+      return "Could not detect enough prayer-time values on this line.";
+    }
+    return "This line needs manual review before it can be parsed.";
+  }
+  function cleanupTimetableText(rawText = "") {
+    return String(rawText ?? "").split(/\r?\n/).map((line) => normalizeTextLine(line)).filter((line) => line && !looksLikeHeader(line) && !looksLikeNoiseLine(line)).join("\n");
   }
   function createEmptyImportedPrayerRow(overrides = {}) {
     return {
@@ -1458,6 +1490,7 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
       midnight: "",
       sourceLine: "",
       sourceLineNumber: 0,
+      fieldErrors: {},
       errors: [],
       statusText: "Klar til gennemgang / \u062C\u0627\u0647\u0632 \u0644\u0644\u0645\u0631\u0627\u062C\u0639\u0629",
       ...overrides
@@ -1477,33 +1510,45 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
       isha: normalizeLooseTime(row.isha),
       midnight: normalizeLooseTime(row.midnight),
       sourceLine: String(row.sourceLine ?? "").trim(),
-      sourceLineNumber: Number(row.sourceLineNumber ?? 0) || 0
+      sourceLineNumber: Number(row.sourceLineNumber ?? 0) || 0,
+      fieldErrors: typeof row.fieldErrors === "object" && row.fieldErrors !== null ? row.fieldErrors : {}
     });
     return normalized;
   }
   function getRowErrors(row) {
     const errors = [];
+    const fieldErrors = {};
     const requiredFields = ["date", "fajr", "sunrise", "dhuhr", "sunset", "maghrib", "midnight"];
     const optionalTimeFields = ["asr", "isha"];
+    function addFieldError(field, message) {
+      errors.push(message);
+      if (!fieldErrors[field]) {
+        fieldErrors[field] = [];
+      }
+      fieldErrors[field].push(message);
+    }
     if (!isDateKey(row.date)) {
-      errors.push("Date must use YYYY-MM-DD.");
+      addFieldError("date", "Date must use YYYY-MM-DD.");
     } else {
       const [year, month, day] = row.date.split("-").map(Number);
       if (!isRealCalendarDate2(year, month, day)) {
-        errors.push("Date is not a real calendar date.");
+        addFieldError("date", "Date is not a real calendar date.");
       }
     }
     requiredFields.filter((field) => field !== "date").forEach((field) => {
       if (!isStrictTime(row[field])) {
-        errors.push(`${field} must use HH:mm.`);
+        addFieldError(field, `${field} must use HH:mm.`);
       }
     });
     optionalTimeFields.forEach((field) => {
       if (row[field] && !isStrictTime(row[field])) {
-        errors.push(`${field} must use HH:mm or stay empty.`);
+        addFieldError(field, `${field} must use HH:mm or stay empty.`);
       }
     });
-    return errors;
+    return {
+      errors,
+      fieldErrors
+    };
   }
   function validateImportedPrayerRows(rows = []) {
     const normalizedRows = Array.isArray(rows) ? rows.map(normalizeImportedRow) : [];
@@ -1514,12 +1559,17 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
       }
     });
     const decoratedRows = normalizedRows.map((row) => {
-      const errors = getRowErrors(row);
+      const { errors, fieldErrors } = getRowErrors(row);
       if (row.date && duplicateMap.get(row.date) > 1) {
+        if (!fieldErrors.date) {
+          fieldErrors.date = [];
+        }
+        fieldErrors.date.push("Date is duplicated in the preview.");
         errors.push("Date is duplicated in the preview.");
       }
       return {
         ...row,
+        fieldErrors,
         errors,
         statusText: errors.length > 0 ? errors.join(" ") : "Ready to save / Klar til at gemme / \u062C\u0627\u0647\u0632 \u0644\u0644\u062D\u0641\u0638"
       };
@@ -1548,25 +1598,26 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     }
     lines.forEach((rawLine, index) => {
       const normalizedLine = normalizeTextLine(rawLine);
-      if (!normalizedLine || looksLikeHeader(normalizedLine)) {
+      if (!normalizedLine || looksLikeHeader(normalizedLine) || looksLikeNoiseLine(normalizedLine)) {
         return;
       }
       const firstTimeMatch = normalizedLine.match(/\b[0-2]?\d\s*[:.]\s*\d{2}\b/);
       const firstTimeIndex = firstTimeMatch?.index ?? -1;
+      const hasWeekday = containsDanishWeekday(normalizedLine);
       const dayNumber = extractDayNumber(normalizedLine, firstTimeIndex);
       const timeTokens = extractTimeTokens(normalizedLine);
-      if (!dayNumber || timeTokens.length < 5) {
+      if (!hasWeekday || timeTokens.length < 5) {
         if (shouldRecordSkippedLine(normalizedLine, timeTokens)) {
           skippedLines.push({
             lineNumber: index + 1,
             rawLine: normalizedLine,
-            reason: "Could not find a usable day number and timetable values on this line."
+            reason: getSkippedLineReason(hasWeekday, dayNumber, timeTokens)
           });
         }
         return;
       }
       const row = createEmptyImportedPrayerRow({
-        date: buildDateKey(safeYear, safeMonth, dayNumber),
+        date: dayNumber ? buildDateKey(safeYear, safeMonth, dayNumber) : "",
         fajr: timeTokens[0] ?? "",
         sunrise: timeTokens[1] ?? "",
         dhuhr: timeTokens[2] ?? "",
@@ -1609,11 +1660,11 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
         lastDate: "\u2014"
       };
     }
-    const ordered = [...rows].sort((left, right) => left.date.localeCompare(right.date));
+    const ordered = rows.filter((row) => isDateKey(row.date)).sort((left, right) => left.date.localeCompare(right.date));
     return {
-      count: ordered.length,
-      firstDate: ordered[0].date,
-      lastDate: ordered[ordered.length - 1].date
+      count: rows.length,
+      firstDate: ordered[0]?.date ?? "\u2014",
+      lastDate: ordered[ordered.length - 1]?.date ?? "\u2014"
     };
   }
 
@@ -1772,15 +1823,15 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
   var MAX_EVENT_IMAGE_BYTES = 2 * 1024 * 1024;
   var ALLOWED_EVENT_IMAGE_TYPES = /* @__PURE__ */ new Set(["image/png", "image/jpeg", "image/webp"]);
   var PREVIEW_FIELDS = [
-    { key: "date", label: "Date" },
-    { key: "fajr", label: "Fajr / Subh" },
-    { key: "sunrise", label: "Sunrise / Solopgang" },
-    { key: "dhuhr", label: "Dhuhr" },
-    { key: "asr", label: "Asr (optional)" },
-    { key: "sunset", label: "Sunset / Solnedgang" },
-    { key: "maghrib", label: "Maghrib" },
-    { key: "isha", label: "Isha (optional)" },
-    { key: "midnight", label: "Midnight / Midnat" }
+    { key: "date", label: "Date", shortLabel: "Date", placeholder: "2026-07-03", inputMode: "numeric", columnClass: "preview-col-date" },
+    { key: "fajr", label: "Fajr / Subh", shortLabel: "Fajr", placeholder: "01:44", inputMode: "numeric", columnClass: "preview-col-fajr" },
+    { key: "sunrise", label: "Sunrise / Solopgang", shortLabel: "Sunrise", placeholder: "04:32", inputMode: "numeric", columnClass: "preview-col-sunrise" },
+    { key: "dhuhr", label: "Dhuhr", shortLabel: "Dhuhr", placeholder: "13:14", inputMode: "numeric", columnClass: "preview-col-dhuhr" },
+    { key: "asr", label: "Asr (optional)", shortLabel: "Asr", placeholder: "17:39", inputMode: "numeric", columnClass: "preview-col-asr" },
+    { key: "sunset", label: "Sunset / Solnedgang", shortLabel: "Sunset", placeholder: "21:55", inputMode: "numeric", columnClass: "preview-col-sunset" },
+    { key: "maghrib", label: "Maghrib", shortLabel: "Maghrib", placeholder: "22:35", inputMode: "numeric", columnClass: "preview-col-maghrib" },
+    { key: "isha", label: "Isha (optional)", shortLabel: "Isha", placeholder: "23:43", inputMode: "numeric", columnClass: "preview-col-isha" },
+    { key: "midnight", label: "Midnight / Midnat", shortLabel: "Midnight", placeholder: "23:50", inputMode: "numeric", columnClass: "preview-col-midnight" }
   ];
   var elements = {
     body: document.body,
@@ -1811,7 +1862,6 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     validateEvents: document.querySelector("#validate-events"),
     saveEvents: document.querySelector("#save-events"),
     saveTheme: document.querySelector("#save-theme"),
-    refreshPreview: document.querySelector("#refresh-preview"),
     clearLocalData: document.querySelector("#clear-local-data"),
     clearPrayerTimes: document.querySelector("#clear-prayer-times"),
     clearEvents: document.querySelector("#clear-events"),
@@ -1826,6 +1876,9 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     parseTimetable: document.querySelector("#parse-timetable"),
     previewTableContainer: document.querySelector("#preview-table-container"),
     saveImportedPrayerTimes: document.querySelector("#save-imported-prayer-times"),
+    reparsePreview: document.querySelector("#reparse-preview"),
+    autoFixImportText: document.querySelector("#autofix-import-text"),
+    clearPreview: document.querySelector("#clear-preview"),
     parseSkippedContainer: document.querySelector("#parse-skipped-container"),
     parseSkippedLines: document.querySelector("#parse-skipped-lines"),
     toggleManualEntry: document.querySelector("#toggle-manual-entry"),
@@ -2289,83 +2342,215 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
       return;
     }
     elements.parseSkippedContainer.hidden = false;
-    elements.parseSkippedLines.innerHTML = skippedLines.map((item) => `<li><strong>Line ${item.lineNumber}:</strong> ${escapeHtml(item.rawLine)}</li>`).join("");
+    elements.parseSkippedLines.innerHTML = skippedLines.map((item) => `
+      <li>
+        <strong>Line ${item.lineNumber}:</strong> ${escapeHtml(item.rawLine)}
+        <span>${escapeHtml(item.reason || "Needs manual review.")}</span>
+      </li>
+    `).join("");
   }
-  function getPreviewFieldIssue(row, field) {
-    const joinedErrors = row.errors.join(" ").toLowerCase();
-    if (field === "date") {
-      return joinedErrors.includes("date");
+  function updatePreviewActionState() {
+    const hasImportText = Boolean(elements.importTextInput.value.trim());
+    const hasPreviewRows = state.previewRows.length > 0;
+    elements.reparsePreview.disabled = !hasImportText;
+    elements.autoFixImportText.disabled = !hasImportText;
+    elements.clearPreview.disabled = !hasPreviewRows;
+  }
+  function getPreviewFieldMessages(row, field) {
+    return row.fieldErrors?.[field] ?? [];
+  }
+  function buildPreviewInput(row, rowIndex, field, extraClass = "") {
+    const fieldMessages = getPreviewFieldMessages(row, field.key);
+    const invalidClass = fieldMessages.length > 0 ? " is-invalid" : "";
+    const titleAttribute = fieldMessages.length > 0 ? ` title="${escapeHtml(fieldMessages.join(" "))}"` : "";
+    return `
+    <input
+      class="preview-input${invalidClass}${extraClass ? ` ${extraClass}` : ""}"
+      type="text"
+      value="${escapeHtml(row[field.key] ?? "")}"
+      placeholder="${escapeHtml(field.placeholder || "")}"
+      inputmode="${escapeHtml(field.inputMode || "text")}"
+      data-row-index="${rowIndex}"
+      data-field="${field.key}"${titleAttribute}
+    >
+  `;
+  }
+  function renderPreviewSummary(validation) {
+    if (validation.rows.length === 0) {
+      elements.previewSummary.innerHTML = `
+      <article class="preview-stat-card">
+        <p class="preview-stat-label">Parsed rows</p>
+        <p class="preview-stat-value">0</p>
+      </article>
+      <article class="preview-stat-card">
+        <p class="preview-stat-label">First date</p>
+        <p class="preview-stat-value">\u2014</p>
+      </article>
+      <article class="preview-stat-card">
+        <p class="preview-stat-label">Last date</p>
+        <p class="preview-stat-value">\u2014</p>
+      </article>
+      <article class="preview-stat-card preview-stat-card-errors">
+        <p class="preview-stat-label">Validation issues</p>
+        <p class="preview-stat-value">0</p>
+      </article>
+    `;
+      return;
     }
-    return joinedErrors.includes(field.toLowerCase());
+    const summary = summarizeImportedRows(validation.rows);
+    const errorCardClass = validation.errorCount > 0 ? "preview-stat-card preview-stat-card-errors has-errors" : "preview-stat-card preview-stat-card-errors";
+    elements.previewSummary.innerHTML = `
+    <article class="preview-stat-card">
+      <p class="preview-stat-label">Parsed rows</p>
+      <p class="preview-stat-value">${summary.count}</p>
+    </article>
+    <article class="preview-stat-card">
+      <p class="preview-stat-label">First date</p>
+      <p class="preview-stat-value">${escapeHtml(summary.firstDate)}</p>
+    </article>
+    <article class="preview-stat-card">
+      <p class="preview-stat-label">Last date</p>
+      <p class="preview-stat-value">${escapeHtml(summary.lastDate)}</p>
+    </article>
+    <article class="${errorCardClass}">
+      <p class="preview-stat-label">Validation issues</p>
+      <p class="preview-stat-value">${validation.errorCount}</p>
+    </article>
+  `;
+  }
+  function renderPreviewValidationState(validation) {
+    if (validation.rows.length === 0) {
+      elements.previewErrors.className = "preview-validation-panel";
+      elements.previewErrors.innerHTML = `
+      <p class="preview-validation-title">Parse a timetable to see validation details here.</p>
+      <p class="preview-validation-copy">The preview becomes editable after parsing.</p>
+    `;
+      return;
+    }
+    if (validation.valid) {
+      elements.previewErrors.className = "preview-validation-panel is-success";
+      elements.previewErrors.innerHTML = `
+      <p class="preview-validation-title">All preview rows are valid and ready to save.</p>
+      <p class="preview-validation-copy">You can save the corrected timetable now.</p>
+    `;
+      return;
+    }
+    const issueItems = validation.rows.flatMap((row, rowIndex) => row.errors.map((error) => {
+      const rowLabel = row.date ? `Row ${rowIndex + 1} (${row.date})` : `Row ${rowIndex + 1}`;
+      return `${rowLabel}: ${error}`;
+    })).slice(0, 4);
+    const hiddenIssueCount = Math.max(validation.errorCount - issueItems.length, 0);
+    elements.previewErrors.className = "preview-validation-panel is-error";
+    elements.previewErrors.innerHTML = `
+    <p class="preview-validation-title">${validation.errorCount} validation issues must be fixed before saving.</p>
+    <ul class="preview-validation-list">
+      ${issueItems.map((message) => `<li>${escapeHtml(message)}</li>`).join("")}
+      ${hiddenIssueCount > 0 ? `<li>And ${hiddenIssueCount} more issue${hiddenIssueCount === 1 ? "" : "s"}.</li>` : ""}
+    </ul>
+  `;
   }
   function renderPreviewTable() {
     if (state.previewRows.length === 0) {
       elements.previewTableContainer.innerHTML = `
       <div class="preview-empty-state">
-        Upload a timetable image or paste timetable text to build the editable preview table.
+        Upload a timetable image or paste timetable text to build the editable review table.
       </div>
     `;
+      updatePreviewActionState();
       return;
     }
-    const headerMarkup = PREVIEW_FIELDS.map((field) => `<th scope="col">${field.label}</th>`).join("");
-    const bodyMarkup = state.previewRows.map((row, rowIndex) => {
-      const fieldCells = PREVIEW_FIELDS.map((field) => {
-        const invalidClass = getPreviewFieldIssue(row, field.key) ? " is-invalid" : "";
-        return `
-        <td>
-          <input
-            class="preview-input${invalidClass}"
-            type="text"
-            value="${escapeHtml(row[field.key] ?? "")}"
-            data-row-index="${rowIndex}"
-            data-field="${field.key}"
-          >
-        </td>
-      `;
-      }).join("");
+    const headerMarkup = PREVIEW_FIELDS.map((field) => `<th scope="col" class="${field.columnClass}" data-field="${field.key}">${field.label}</th>`).join("");
+    const colMarkup = PREVIEW_FIELDS.map((field) => `<col class="${field.columnClass}">`).join("");
+    const tableBodyMarkup = state.previewRows.map((row, rowIndex) => {
+      const fieldCells = PREVIEW_FIELDS.map((field) => `
+      <td class="${field.columnClass}" data-field="${field.key}">
+        ${buildPreviewInput(row, rowIndex, field)}
+      </td>
+    `).join("");
       const statusClass = row.errors.length > 0 ? "preview-status-text is-error" : "preview-status-text";
-      const statusText = row.errors.length > 0 ? row.statusText : `Ready. Source line ${row.sourceLineNumber || "--"}.`;
+      const statusText = row.errors.length > 0 ? row.statusText : `Valid. Source line ${row.sourceLineNumber || "--"}.`;
       return `
       <tr class="${row.errors.length > 0 ? "preview-row-error" : ""}">
         ${fieldCells}
-        <td>
+        <td class="preview-col-status" data-field="status">
           <p class="${statusClass}" title="${escapeHtml(row.sourceLine || "")}">${escapeHtml(statusText)}</p>
         </td>
       </tr>
     `;
     }).join("");
+    const cardMarkup = state.previewRows.map((row, rowIndex) => {
+      const statusText = row.errors.length > 0 ? row.statusText : `Valid. Source line ${row.sourceLineNumber || "--"}.`;
+      const cardFields = PREVIEW_FIELDS.map((field) => `
+      <label class="preview-card-field" data-field="${field.key}">
+        <span class="preview-card-label">${field.label}</span>
+        ${buildPreviewInput(row, rowIndex, field, "preview-input-card")}
+      </label>
+    `).join("");
+      return `
+      <article class="preview-card${row.errors.length > 0 ? " is-error" : ""}">
+        <div class="preview-card-header">
+          <div>
+            <p class="preview-card-kicker">Preview row ${rowIndex + 1}</p>
+            <h3 class="preview-card-title">${escapeHtml(row.date || "Missing date")}</h3>
+            <p class="preview-card-source">Source line ${row.sourceLineNumber || "--"}</p>
+          </div>
+          <span class="preview-card-badge${row.errors.length > 0 ? " is-error" : ""}">
+            ${row.errors.length > 0 ? "Needs fixes" : "Valid"}
+          </span>
+        </div>
+        <div class="preview-card-grid">
+          ${cardFields}
+        </div>
+        <p class="preview-status-text${row.errors.length > 0 ? " is-error" : ""}" title="${escapeHtml(row.sourceLine || "")}">
+          ${escapeHtml(statusText)}
+        </p>
+      </article>
+    `;
+    }).join("");
     elements.previewTableContainer.innerHTML = `
-    <table class="preview-table">
-      <thead>
-        <tr>
-          ${headerMarkup}
-          <th scope="col">Status</th>
-        </tr>
-      </thead>
-      <tbody>${bodyMarkup}</tbody>
-    </table>
+    <div class="preview-table-wrap">
+      <table class="preview-table">
+        <colgroup>
+          ${colMarkup}
+          <col class="preview-col-status">
+        </colgroup>
+        <thead>
+          <tr>
+            ${headerMarkup}
+            <th scope="col" class="preview-col-status">Status</th>
+          </tr>
+        </thead>
+        <tbody>${tableBodyMarkup}</tbody>
+      </table>
+    </div>
+    <div class="preview-card-list">
+      ${cardMarkup}
+    </div>
   `;
+    updatePreviewActionState();
+  }
+  function focusVisiblePreviewInput(rowIndex, field, selectionStart = null, selectionEnd = null, scrollLeft = 0) {
+    const previewWrap = elements.previewTableContainer.querySelector(".preview-table-wrap");
+    if (previewWrap) {
+      previewWrap.scrollLeft = scrollLeft;
+    }
+    const matchingInput = [...elements.previewTableContainer.querySelectorAll(
+      `input[data-row-index="${rowIndex}"][data-field="${field}"]`
+    )].find((input) => input.offsetParent !== null);
+    if (!(matchingInput instanceof HTMLInputElement)) {
+      return;
+    }
+    matchingInput.focus({ preventScroll: true });
+    if (typeof selectionStart === "number" && typeof selectionEnd === "number") {
+      matchingInput.setSelectionRange(selectionStart, selectionEnd);
+    }
   }
   function refreshPreviewValidation() {
     const validation = validateImportedPrayerRows(state.previewRows);
     state.previewRows = validation.rows;
-    const summary = summarizeImportedRows(validation.rows.filter((row) => row.date));
-    setText(
-      elements.previewSummary,
-      validation.rows.length > 0 ? `Preview rows: ${summary.count}. First date: ${summary.firstDate}. Last date: ${summary.lastDate}.` : "No timetable parsed yet."
-    );
-    if (validation.rows.length === 0) {
-      setStatus(elements.previewErrors, "Parse a timetable to see validation details here.");
-    } else if (validation.valid) {
-      setStatus(elements.previewErrors, "All preview rows are valid and ready to save.", "success");
-    } else {
-      setStatus(
-        elements.previewErrors,
-        `${validation.errorCount} validation issues must be fixed before saving.`,
-        "error"
-      );
-    }
     elements.saveImportedPrayerTimes.disabled = !validation.valid;
+    renderPreviewSummary(validation);
+    renderPreviewValidationState(validation);
     renderPreviewTable();
   }
   function parseImportText() {
@@ -2388,7 +2573,7 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     refreshPreviewValidation();
     setStatus(
       elements.importSaveStatus,
-      parseResult.rows.length > 0 ? "Preview updated. Review every row, then save imported prayer times." : "Imported prayer times are not saved yet.",
+      parseResult.rows.length > 0 ? "Preview updated. Review and correct every row before saving." : "Imported prayer times are not saved yet.",
       parseResult.rows.length > 0 ? "warning" : ""
     );
     if (parseResult.rows.length === 0) {
@@ -2400,6 +2585,36 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
       return;
     }
     setStatus(elements.parseStatus, `${parseResult.message} Fix highlighted rows before saving.`, "warning");
+  }
+  function clearPreviewState(options = {}) {
+    state.previewRows = [];
+    refreshPreviewValidation();
+    if (!options.preserveSkippedLines) {
+      renderSkippedLines([]);
+    }
+    if (!options.preserveStatus) {
+      setStatus(elements.importSaveStatus, "Preview cleared. Re-parse the text when you are ready.", "warning");
+      setStatus(elements.parseStatus, "Preview cleared. Parse the timetable again to rebuild the review step.", "warning");
+    }
+  }
+  function autoFixImportText() {
+    const rawText = elements.importTextInput.value.trim();
+    if (!rawText) {
+      setStatus(elements.parseStatus, "Paste timetable text or run OCR before using auto-fix.", "error");
+      return;
+    }
+    const cleanedText = cleanupTimetableText(rawText);
+    if (!cleanedText) {
+      elements.importTextInput.value = "";
+      clearPreviewState({ preserveStatus: true });
+      setStatus(elements.parseStatus, "Auto-fix removed the unreadable lines. Paste or OCR the timetable again.", "warning");
+      setStatus(elements.importSaveStatus, "Imported prayer times are not saved yet.");
+      return;
+    }
+    elements.importTextInput.value = cleanedText;
+    setStatus(elements.parseStatus, "Common OCR issues were cleaned up. Review the text, then re-parse it.", "success");
+    setStatus(elements.generalStatus, "OCR text cleaned up. Re-parse the timetable to refresh the preview.", "warning");
+    updatePreviewActionState();
   }
   function populateImportSample() {
     elements.importMonth.value = "7";
@@ -2433,6 +2648,7 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     if (remoteResult.ok && localSaved) {
       return {
         ok: true,
+        remoteSaved: true,
         localSaved: true,
         tone: "success",
         detail: successMessage,
@@ -2442,6 +2658,7 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     if (remoteResult.ok) {
       return {
         ok: true,
+        remoteSaved: true,
         localSaved: false,
         tone: "warning",
         detail: `${successMessage} Supabase was updated, but this browser could not update its local cache.`,
@@ -2451,6 +2668,7 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     if (localSaved) {
       return {
         ok: true,
+        remoteSaved: false,
         localSaved: true,
         tone: "warning",
         detail: `${successMessage} Saved in this browser only.`,
@@ -2460,6 +2678,7 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     }
     return {
       ok: false,
+      remoteSaved: false,
       localSaved: false,
       tone: "error",
       detail: "Could not save prayer times locally or remotely.",
@@ -2471,8 +2690,8 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     state.previewRows = validation.rows;
     refreshPreviewValidation();
     if (!validation.valid) {
-      setStatus(elements.importSaveStatus, "Imported rows contain validation errors and cannot be saved yet.", "error");
-      setStatus(elements.generalStatus, "Fix the highlighted preview rows before saving imported prayer times.", "error");
+      setStatus(elements.importSaveStatus, "Highlighted preview rows still need fixes before saving.", "error");
+      setStatus(elements.generalStatus, "Fix the highlighted preview rows before saving the corrected timetable.", "error");
       return;
     }
     const mergedPrayerEntries = mergePrayerEntries(
@@ -2483,12 +2702,32 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
       mergedPrayerEntries,
       `Saved ${validation.rows.length} imported prayer-time rows. The merged dataset now has ${mergedPrayerEntries.length} day entries.`
     );
-    setStatus(elements.importSaveStatus, persistence.detail, persistence.tone);
-    setStatus(elements.generalStatus, persistence.general, persistence.ok ? persistence.tone : "error");
+    if (persistence.remoteSaved) {
+      setStatus(
+        elements.importSaveStatus,
+        "Saved to Supabase. Mosque screens will update automatically.",
+        persistence.tone
+      );
+      setStatus(
+        elements.generalStatus,
+        `Saved ${validation.rows.length} corrected timetable rows to the shared dataset.`,
+        persistence.tone
+      );
+    } else if (persistence.localSaved) {
+      setStatus(
+        elements.importSaveStatus,
+        "Saved locally only. This will not update mosque screens until Supabase is connected.",
+        "warning"
+      );
+      setStatus(elements.generalStatus, persistence.general, "warning");
+    } else {
+      setStatus(elements.importSaveStatus, persistence.detail, "error");
+      setStatus(elements.generalStatus, persistence.general, "error");
+    }
     setStatus(
       elements.prayerTimesStatus,
       persistence.localSaved ? "Manual JSON editor updated with the saved merged prayer-time dataset." : "Manual JSON editor could not be updated because the browser copy was not saved.",
-      persistence.localSaved ? persistence.tone : "error"
+      persistence.localSaved ? persistence.tone : persistence.remoteSaved ? "warning" : "error"
     );
   }
   function loadTesseract() {
@@ -2536,6 +2775,7 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
       });
       const extractedText = String(result?.data?.text ?? "").trim();
       elements.importTextInput.value = extractedText;
+      updatePreviewActionState();
       if (!extractedText) {
         setStatus(
           elements.imageImportStatus,
@@ -2569,6 +2809,17 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     setStatus(elements.imageImportStatus, "Image uploaded. OCR will now try to read the timetable.", "warning");
     runOcrForCurrentImage();
   }
+  function normalizePreviewCellValue(field, value, eventType) {
+    const rawValue = String(value ?? "");
+    if (field === "date") {
+      return rawValue.trim();
+    }
+    if (eventType === "change") {
+      const normalized = normalizeLooseTime(rawValue);
+      return normalized || rawValue.trim();
+    }
+    return rawValue;
+  }
   function updatePreviewCell(event) {
     const target = event.target;
     if (!(target instanceof HTMLInputElement)) {
@@ -2579,12 +2830,20 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     if (!Number.isInteger(rowIndex) || !field || !state.previewRows[rowIndex]) {
       return;
     }
+    const selectionStart = target.selectionStart;
+    const selectionEnd = target.selectionEnd;
+    const scrollLeft = elements.previewTableContainer.querySelector(".preview-table-wrap")?.scrollLeft ?? 0;
+    const nextValue = normalizePreviewCellValue(field, target.value, event.type);
+    if (target.value !== nextValue) {
+      target.value = nextValue;
+    }
     state.previewRows[rowIndex] = {
       ...state.previewRows[rowIndex],
-      [field]: target.value
+      [field]: nextValue
     };
     refreshPreviewValidation();
-    setStatus(elements.importSaveStatus, "Preview changed. Save again after reviewing the updated rows.", "warning");
+    focusVisiblePreviewInput(rowIndex, field, selectionStart, selectionEnd, scrollLeft);
+    setStatus(elements.importSaveStatus, "Preview changed. Save the corrected timetable after reviewing the updated rows.", "warning");
   }
   function validatePrayerTextarea() {
     const parsed = parseJsonFromTextarea(elements.prayerTimesInput);
@@ -3379,15 +3638,15 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
       setStatus(elements.themeStatus, `Theme saved as ${getThemeLabel(selectedTheme)}.`, "success");
       setStatus(elements.generalStatus, "Theme saved. index.html will use the selected theme in this browser.", "success");
     });
-    elements.refreshPreview.addEventListener("click", () => {
-      refreshStatusPanel();
-      refreshPreviewValidation();
-      renderSavedEvents();
-      setStatus(elements.generalStatus, "Status and preview validation refreshed.", "success");
-    });
     elements.imageInput.addEventListener("change", handleImageSelection);
     elements.runOcrButton.addEventListener("click", () => {
       runOcrForCurrentImage();
+    });
+    elements.importTextInput.addEventListener("input", () => {
+      updatePreviewActionState();
+      if (state.previewRows.length > 0) {
+        setStatus(elements.parseStatus, "Timetable text changed. Click Parse timetable or Re-parse text to refresh the preview.", "warning");
+      }
     });
     elements.useSampleImportText.addEventListener("click", () => {
       populateImportSample();
@@ -3395,6 +3654,15 @@ fredag 31 01:46 05:13 13:16 21:18 21:51 23:32`;
     });
     elements.parseTimetable.addEventListener("click", () => {
       parseImportText();
+    });
+    elements.reparsePreview.addEventListener("click", () => {
+      parseImportText();
+    });
+    elements.autoFixImportText.addEventListener("click", () => {
+      autoFixImportText();
+    });
+    elements.clearPreview.addEventListener("click", () => {
+      clearPreviewState({ preserveSkippedLines: true });
     });
     elements.previewTableContainer.addEventListener("input", updatePreviewCell);
     elements.previewTableContainer.addEventListener("change", updatePreviewCell);

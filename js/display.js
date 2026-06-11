@@ -134,7 +134,6 @@ const elements = {
   gregorianDa: document.querySelector("#gregorian-da"),
   hijriAr: document.querySelector("#hijri-ar"),
   hijriDa: document.querySelector("#hijri-da"),
-  themePill: document.querySelector("#theme-pill"),
   nextPrayerIcon: document.querySelector("#next-prayer-icon"),
   nextPrayerNameAr: document.querySelector("#next-prayer-name-ar"),
   nextPrayerNameDa: document.querySelector("#next-prayer-name-da"),
@@ -145,9 +144,7 @@ const elements = {
   prayerStatusAr: document.querySelector("#prayer-status-ar"),
   prayerStatusDa: document.querySelector("#prayer-status-da"),
   prayerList: document.querySelector("#prayer-list"),
-  dataSourceIndicator: document.querySelector("#data-source-indicator"),
   eventPanel: document.querySelector(".event-panel"),
-  eventThemeLabel: document.querySelector("#event-theme-label"),
   eventDay: document.querySelector("#event-day"),
   eventMonth: document.querySelector("#event-month"),
   eventHijriShort: document.querySelector("#event-hijri-short"),
@@ -203,7 +200,6 @@ function applyTheme(theme) {
   elements.body.dataset.theme = state.theme;
   elements.featureBanner.classList.toggle("friday-banner", state.theme === "teal");
   elements.featureBanner.classList.toggle("muharram-banner", state.theme === "muharram");
-  setText(elements.themePill, APP_CONFIG.themes[state.theme].label);
   updateFooter();
   updateLogo();
   renderNoticeCard();
@@ -392,12 +388,10 @@ function renderEventMedia(eventThemeKey, imageDataUrl = "") {
 
 function renderEvent(event) {
   elements.eventPanel?.classList.toggle("is-empty", !event);
-  elements.eventThemeLabel.hidden = false;
 
   if (!event) {
     const fallbackTheme = state.theme === "muharram" ? "muharram" : "normal";
     const themeMeta = getEventThemeMeta(fallbackTheme);
-    setText(elements.eventThemeLabel, themeMeta.label);
     setText(elements.eventDay, "--");
     setText(elements.eventMonth, "---");
     setText(elements.eventHijriShort, "");
@@ -428,7 +422,6 @@ function renderEvent(event) {
   const hasLocation = Boolean(event.locationArabic || event.locationDanish);
 
   renderEventMedia(themeMeta.key, event.imageDataUrl);
-  setText(elements.eventThemeLabel, themeMeta.label);
   setText(elements.eventDay, badge.day);
   setText(elements.eventMonth, badge.month);
   setText(elements.eventHijriShort, weekday.arabic);
@@ -448,18 +441,6 @@ function renderEvent(event) {
 
   elements.eventDescriptionAr.title = eventDateText.arabic;
   elements.eventDescriptionDa.title = eventDateText.danish;
-}
-
-function renderSourceBadge() {
-  const labels = {
-    "supabase-function": "Supabase",
-    localStorage: "Local data",
-    "sample-file": "Sample JSON",
-    "inline-sample": "Inline sample",
-  };
-
-  setText(elements.dataSourceIndicator, labels[state.prayerSource] ?? "Sample");
-  elements.dataSourceIndicator.hidden = false;
 }
 
 function scheduleMidnightReload(now = new Date()) {
@@ -495,7 +476,6 @@ async function refreshDisplayData(now = new Date()) {
   state.prayerItems = prayerPayload.items;
   state.prayerSource = prayerPayload.source;
   state.eventItems = eventPayload.items;
-  renderSourceBadge();
   syncDayState(now);
 }
 

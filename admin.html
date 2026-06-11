@@ -145,6 +145,55 @@
             </div>
           </article>
 
+          <article class="panel admin-panel preview-panel">
+            <div class="admin-panel-heading">
+              <div>
+                <h2>Preview parsed timetable</h2>
+                <p class="admin-helper">
+                  Review and correct every row before saving. Highlighted rows must be fixed first.
+                </p>
+              </div>
+            </div>
+            <div id="preview-summary" class="preview-summary-grid" aria-live="polite">
+              <article class="preview-stat-card">
+                <p class="preview-stat-label">Parsed rows</p>
+                <p class="preview-stat-value">0</p>
+              </article>
+              <article class="preview-stat-card">
+                <p class="preview-stat-label">First date</p>
+                <p class="preview-stat-value">—</p>
+              </article>
+              <article class="preview-stat-card">
+                <p class="preview-stat-label">Last date</p>
+                <p class="preview-stat-value">—</p>
+              </article>
+              <article class="preview-stat-card preview-stat-card-errors">
+                <p class="preview-stat-label">Validation issues</p>
+                <p class="preview-stat-value">0</p>
+              </article>
+            </div>
+            <div id="preview-errors" class="preview-validation-panel" aria-live="polite">
+              <p class="preview-validation-title">Parse a timetable to see validation details here.</p>
+              <p class="preview-validation-copy">The preview becomes editable after parsing.</p>
+            </div>
+            <div id="preview-table-container" class="preview-table-container" tabindex="0">
+              <div class="preview-empty-state">
+                Upload a timetable image or paste timetable text to build the editable review table.
+              </div>
+            </div>
+            <div class="button-row preview-action-row">
+              <button type="button" class="button-accent" id="save-imported-prayer-times" disabled>
+                Save corrected timetable
+              </button>
+              <button type="button" id="reparse-preview" disabled>Re-parse text</button>
+              <button type="button" id="autofix-import-text" disabled>Auto-fix OCR text</button>
+              <button type="button" id="clear-preview" disabled>Clear preview</button>
+            </div>
+            <p id="import-save-status" class="status-line">
+              Imported prayer times are not saved yet.
+            </p>
+          </article>
+
           <article class="panel admin-panel prayer-manual-panel">
             <div class="admin-panel-heading">
               <div>
@@ -399,39 +448,6 @@
         </div>
 
         <aside class="admin-column admin-secondary">
-          <article class="panel admin-panel preview-panel">
-            <div class="admin-panel-heading">
-              <div>
-                <h2>Preview parsed timetable</h2>
-                <p class="admin-helper">
-                  Review every row before saving. Save stays disabled until all highlighted errors are fixed.
-                </p>
-              </div>
-            </div>
-            <div class="preview-summary">
-              <p id="preview-summary" class="preview-summary-line">
-                No timetable parsed yet.
-              </p>
-              <p id="preview-errors" class="preview-summary-line preview-summary-errors">
-                Parse a timetable to see validation details here.
-              </p>
-            </div>
-            <div id="preview-table-container" class="preview-table-container" tabindex="0">
-              <div class="preview-empty-state">
-                Upload a timetable image or paste timetable text to build the editable preview table.
-              </div>
-            </div>
-            <div class="button-row">
-              <button type="button" class="button-accent" id="save-imported-prayer-times" disabled>
-                Save imported prayer times
-              </button>
-              <button type="button" id="refresh-preview">Refresh status</button>
-            </div>
-            <p id="import-save-status" class="status-line">
-              Imported prayer times are not saved yet.
-            </p>
-          </article>
-
           <article class="panel admin-panel">
             <div class="admin-panel-heading">
               <div>

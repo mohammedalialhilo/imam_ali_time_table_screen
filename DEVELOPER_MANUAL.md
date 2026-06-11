@@ -462,6 +462,12 @@ Display theme still uses browser-local storage:
 
 Shared theme sync is not implemented yet.
 
+Important display rule:
+
+- debug labels, theme badges, and data-source badges must not be rendered on the public display
+- source/theme status indicators belong in `admin.html` only
+- the public screen should show visitor-facing content only
+
 ## OCR import architecture
 
 Flow:
@@ -470,10 +476,11 @@ Flow:
 2. preview image
 3. load Tesseract.js from CDN on demand
 4. place OCR text in editable textarea
-5. admin corrects text
-6. parse timetable
-7. validate preview rows
-8. save only after review
+5. optionally run OCR text cleanup
+6. admin corrects text
+7. parse timetable
+8. validate preview rows
+9. save only after review
 
 Manual review remains required because client-side OCR can misread digits, separators, and Danish weekday names.
 
@@ -495,6 +502,90 @@ Mapping:
 - `Midnat` -> `midnight`
 
 It never invents missing `asr` or `isha`.
+
+## Preview table architecture
+
+`js/admin.js` keeps parsed rows in `state.previewRows`.
+
+Each row stores:
+
+- editable prayer fields
+- `sourceLine`
+- `sourceLineNumber`
+- `fieldErrors`
+- `errors`
+- `statusText`
+
+The preview render is split into two responsive views:
+
+- desktop/laptop: wide editable table inside `.preview-table-wrap`
+- mobile: stacked `.preview-card` layout
+
+Both views write back into the same `state.previewRows` collection through delegated input events.
+
+## Preview validation rules
+
+Validation happens in `validateImportedPrayerRows()` inside [js/import-prayer-image.js](/c:/Users/alhil/Desktop/Imam Ali Moske/imam_ali_time_table_screen/js/import-prayer-image.js:1).
+
+Rules:
+
+- `date` is required and must use `YYYY-MM-DD`
+- `fajr`, `sunrise`, `dhuhr`, `sunset`, `maghrib`, and `midnight` are required and must use `HH:mm`
+- `asr` and `isha` may be empty
+- duplicate dates are rejected
+
+`refreshPreviewValidation()` in [js/admin.js](/c:/Users/alhil/Desktop/Imam Ali Moske/imam_ali_time_table_screen/js/admin.js:1) recalculates:
+
+- summary cards
+- validation warning box
+- per-cell invalid styling
+- per-row status copy
+- save button enabled state
+
+## Responsive preview behavior
+
+The parsed timetable review step is intentionally not one layout for every screen:
+
+- at wider widths, the admin gets a scrollable table with fixed minimum column widths
+- at smaller widths, the table is hidden and editable cards are shown instead
+- horizontal scrolling is confined to the preview table wrapper, not the whole page
+
+## OCR cleanup logic
+
+Before parsing, the import module normalizes common OCR mistakes:
+
+- `01.44` -> `01:44`
+- `01 : 44` -> `01:44`
+- `22:30,` -> `22:30`
+- repeated spaces collapse to single spaces
+- obvious header/footer/noise lines are removed during cleanup
+
+The optional **Auto-fix OCR text** button applies this cleanup to the editable import textarea before reparsing.
+
+## Date parsing from month and year
+
+The timetable image usually contains only day numbers. The parser therefore builds full dates from:
+
+- the selected admin month
+- the selected admin year
+- the day number found on each Danish weekday row
+
+Example:
+
+- selected month: `7`
+- selected year: `2026`
+- row day number: `3`
+- output date: `2026-07-03`
+
+If the line has enough prayer-time values but the day number is missing or invalid, the parser keeps the row in preview with an invalid `date` so the admin can correct it manually.
+
+## Why preview validation is required
+
+The preview step is a deliberate safety barrier:
+
+- OCR is unreliable enough that direct save would create silent timetable errors
+- mosque staff need a clear correction step before shared data syncs
+- the save action remains disabled until every required field is valid
 
 ## Event form architecture
 

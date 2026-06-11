@@ -102,7 +102,7 @@ The easiest method is:
 8. Click **Parse timetable**.
 9. Review the preview table carefully.
 10. Fix any highlighted errors.
-11. Click **Save imported prayer times**.
+11. Click **Save corrected timetable**.
 12. Open `/display` and confirm the update.
 
 Important warning:
@@ -147,7 +147,7 @@ If OCR is unavailable, you can still paste timetable text.
 4. Click **Parse timetable**.
 5. Review the preview table.
 6. Fix any errors.
-7. Click **Save imported prayer times**.
+7. Click **Save corrected timetable**.
 
 Example line:
 
@@ -155,11 +155,30 @@ Example line:
 fredag 3 01:44 04:32 13:14 21:55 22:35 23:50
 ```
 
-## How the preview table works
+## How to review and correct parsed prayer times
 
-The preview table is editable before saving.
+1. Upload an image or paste timetable text.
+2. Choose the correct month and year.
+3. Click **Parse timetable**.
+4. Review the **Preview parsed timetable** section.
+5. Check the summary cards:
+   - parsed rows
+   - first date
+   - last date
+   - validation issues
+6. Fix every highlighted cell.
+7. If OCR text looks messy, click **Auto-fix OCR text** and then **Re-parse text**.
+8. Make sure the validation panel says all rows are valid.
+9. Click **Save corrected timetable**.
 
-Columns:
+Important:
+
+- OCR can read numbers incorrectly. Always compare the preview with the original timetable image before saving.
+- On desktop and laptop screens, the preview appears as a wide editable table.
+- On mobile screens, the preview changes into stacked editable cards.
+- The page saves only when every required field is valid.
+
+Preview columns:
 
 - `Date`
 - `Fajr/Subh`
@@ -172,12 +191,12 @@ Columns:
 - `Midnight/Midnat`
 - `Status`
 
-Rules:
+Validation rules:
 
-- red rows must be fixed before saving
-- save is disabled while errors exist
+- `Date` must use `YYYY-MM-DD`
 - required time fields must use `HH:mm`
-- date must use `YYYY-MM-DD`
+- `Asr` and `Isha` may stay empty
+- red rows and red inputs must be fixed before saving
 
 ## How to enter prayer times manually with JSON
 
