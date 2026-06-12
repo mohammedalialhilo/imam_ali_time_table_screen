@@ -1155,6 +1155,14 @@ function renderPreviewValidationState(validation) {
   `;
 }
 
+function getPreviewRowStatusText(row) {
+  if (row.errors.length > 0) {
+    return row.statusText;
+  }
+
+  return `Valid. Source line ${row.sourceLineNumber || "--"}.`;
+}
+
 function renderPreviewTable() {
   if (state.previewRows.length === 0) {
     elements.previewTableContainer.innerHTML = `
@@ -1181,24 +1189,24 @@ function renderPreviewTable() {
     `).join("");
 
     const statusClass = row.errors.length > 0 ? "preview-status-text is-error" : "preview-status-text";
-    const statusText = row.errors.length > 0
-      ? row.statusText
-      : `Valid. Source line ${row.sourceLineNumber || "--"}.`;
+    const statusText = getPreviewRowStatusText(row);
 
     return `
-      <tr class="${row.errors.length > 0 ? "preview-row-error" : ""}">
+      <tr class="${row.errors.length > 0 ? "preview-row-error" : ""}" data-preview-row="${rowIndex}">
         ${fieldCells}
         <td class="preview-col-status" data-field="status">
-          <p class="${statusClass}" title="${escapeHtml(row.sourceLine || "")}">${escapeHtml(statusText)}</p>
+          <p
+            class="${statusClass}"
+            data-preview-status-row="${rowIndex}"
+            title="${escapeHtml(row.sourceLine || "")}"
+          >${escapeHtml(statusText)}</p>
         </td>
       </tr>
     `;
   }).join("");
 
   const cardMarkup = state.previewRows.map((row, rowIndex) => {
-    const statusText = row.errors.length > 0
-      ? row.statusText
-      : `Valid. Source line ${row.sourceLineNumber || "--"}.`;
+    const statusText = getPreviewRowStatusText(row);
     const cardFields = PREVIEW_FIELDS.map((field) => `
       <label class="preview-card-field" data-field="${field.key}">
         <span class="preview-card-label">${field.label}</span>
@@ -1207,21 +1215,27 @@ function renderPreviewTable() {
     `).join("");
 
     return `
-      <article class="preview-card${row.errors.length > 0 ? " is-error" : ""}">
+      <article class="preview-card${row.errors.length > 0 ? " is-error" : ""}" data-preview-row="${rowIndex}">
         <div class="preview-card-header">
           <div>
             <p class="preview-card-kicker">Preview row ${rowIndex + 1}</p>
-            <h3 class="preview-card-title">${escapeHtml(row.date || "Missing date")}</h3>
+            <h3 class="preview-card-title" data-preview-date-title-row="${rowIndex}">
+              ${escapeHtml(row.date || "Missing date")}
+            </h3>
             <p class="preview-card-source">Source line ${row.sourceLineNumber || "--"}</p>
           </div>
-          <span class="preview-card-badge${row.errors.length > 0 ? " is-error" : ""}">
+          <span class="preview-card-badge${row.errors.length > 0 ? " is-error" : ""}" data-preview-badge-row="${rowIndex}">
             ${row.errors.length > 0 ? "Needs fixes" : "Valid"}
           </span>
         </div>
         <div class="preview-card-grid">
           ${cardFields}
         </div>
-        <p class="preview-status-text${row.errors.length > 0 ? " is-error" : ""}" title="${escapeHtml(row.sourceLine || "")}">
+        <p
+          class="preview-status-text${row.errors.length > 0 ? " is-error" : ""}"
+          data-preview-status-row="${rowIndex}"
+          title="${escapeHtml(row.sourceLine || "")}"
+        >
           ${escapeHtml(statusText)}
         </p>
       </article>
@@ -1251,33 +1265,96 @@ function renderPreviewTable() {
   updatePreviewActionState();
 }
 
-function focusVisiblePreviewInput(rowIndex, field, selectionStart = null, selectionEnd = null, scrollLeft = 0) {
-  const previewWrap = elements.previewTableContainer.querySelector(".preview-table-wrap");
-  if (previewWrap) {
-    previewWrap.scrollLeft = scrollLeft;
-  }
+function syncPreviewInputs(validation) {
+  validation.rows.forEach((row, rowIndex) => {
+    const rowHasErrors = row.errors.length > 0;
+    const statusText = getPreviewRowStatusText(row);
+    const statusTitle = row.sourceLine || "";
+    const titleText = row.date || "Missing date";
+    const badgeText = rowHasErrors ? "Needs fixes" : "Valid";
 
-  const matchingInput = [...elements.previewTableContainer.querySelectorAll(
-    `input[data-row-index="${rowIndex}"][data-field="${field}"]`,
-  )].find((input) => input.offsetParent !== null);
+    elements.previewTableContainer
+      .querySelectorAll(`[data-preview-row="${rowIndex}"]`)
+      .forEach((element) => {
+        if (element.tagName === "TR") {
+          element.classList.toggle("preview-row-error", rowHasErrors);
+          return;
+        }
 
-  if (!(matchingInput instanceof HTMLInputElement)) {
-    return;
-  }
+        element.classList.toggle("is-error", rowHasErrors);
+      });
 
-  matchingInput.focus({ preventScroll: true });
-  if (typeof selectionStart === "number" && typeof selectionEnd === "number") {
-    matchingInput.setSelectionRange(selectionStart, selectionEnd);
-  }
+    elements.previewTableContainer
+      .querySelectorAll(`[data-preview-status-row="${rowIndex}"]`)
+      .forEach((element) => {
+        element.textContent = statusText;
+        element.setAttribute("title", statusTitle);
+        element.classList.toggle("is-error", rowHasErrors);
+      });
+
+    elements.previewTableContainer
+      .querySelectorAll(`[data-preview-badge-row="${rowIndex}"]`)
+      .forEach((element) => {
+        element.textContent = badgeText;
+        element.classList.toggle("is-error", rowHasErrors);
+      });
+
+    elements.previewTableContainer
+      .querySelectorAll(`[data-preview-date-title-row="${rowIndex}"]`)
+      .forEach((element) => {
+        element.textContent = titleText;
+      });
+
+    PREVIEW_FIELDS.forEach((field) => {
+      const fieldMessages = getPreviewFieldMessages(row, field.key);
+      const invalid = fieldMessages.length > 0;
+      const title = fieldMessages.join(" ");
+
+      elements.previewTableContainer
+        .querySelectorAll(`input[data-row-index="${rowIndex}"][data-field="${field.key}"]`)
+        .forEach((input) => {
+          input.classList.toggle("is-invalid", invalid);
+          input.setAttribute("aria-invalid", invalid ? "true" : "false");
+
+          if (title) {
+            input.setAttribute("title", title);
+          } else {
+            input.removeAttribute("title");
+          }
+
+          if (document.activeElement !== input && input.value !== (row[field.key] ?? "")) {
+            input.value = row[field.key] ?? "";
+          }
+        });
+    });
+  });
 }
 
-function refreshPreviewValidation() {
-  const validation = validateImportedPrayerRows(state.previewRows);
+function applyPreviewValidation(validation, options = {}) {
   state.previewRows = validation.rows;
   elements.saveImportedPrayerTimes.disabled = !validation.valid;
   renderPreviewSummary(validation);
   renderPreviewValidationState(validation);
-  renderPreviewTable();
+
+  const shouldRenderTable = options.renderTable === true
+    || validation.rows.length === 0
+    || !elements.previewTableContainer.querySelector("[data-row-index]");
+
+  if (shouldRenderTable) {
+    renderPreviewTable();
+    return;
+  }
+
+  syncPreviewInputs(validation);
+}
+
+function refreshPreviewValidation(options = {}) {
+  const validation = validateImportedPrayerRows(state.previewRows, {
+    preserveRawValues: options.normalizeValues !== true,
+  });
+  applyPreviewValidation(validation, {
+    renderTable: options.renderTable === true,
+  });
 }
 
 function parseImportText() {
@@ -1285,10 +1362,9 @@ function parseImportText() {
   if (!rawText) {
     state.previewRows = [];
     renderSkippedLines([]);
-    renderPreviewTable();
     setStatus(elements.parseStatus, "Paste timetable text or review OCR text before parsing.", "error");
     setStatus(elements.importSaveStatus, "Imported prayer times are not saved yet.");
-    refreshPreviewValidation();
+    refreshPreviewValidation({ renderTable: true });
     return;
   }
 
@@ -1299,7 +1375,7 @@ function parseImportText() {
 
   state.previewRows = parseResult.rows;
   renderSkippedLines(parseResult.skippedLines);
-  refreshPreviewValidation();
+  applyPreviewValidation(parseResult, { renderTable: true });
   setStatus(
     elements.importSaveStatus,
     parseResult.rows.length > 0
@@ -1323,7 +1399,7 @@ function parseImportText() {
 
 function clearPreviewState(options = {}) {
   state.previewRows = [];
-  refreshPreviewValidation();
+  refreshPreviewValidation({ renderTable: true });
 
   if (!options.preserveSkippedLines) {
     renderSkippedLines([]);
@@ -1439,8 +1515,7 @@ async function persistPrayerDataset(prayerEntries, successMessage) {
 
 async function saveImportedPrayerRows() {
   const validation = validateImportedPrayerRows(state.previewRows);
-  state.previewRows = validation.rows;
-  refreshPreviewValidation();
+  applyPreviewValidation(validation, { renderTable: true });
 
   if (!validation.valid) {
     setStatus(elements.importSaveStatus, "Highlighted preview rows still need fixes before saving.", "error");
@@ -1609,9 +1684,6 @@ function updatePreviewCell(event) {
     return;
   }
 
-  const selectionStart = target.selectionStart;
-  const selectionEnd = target.selectionEnd;
-  const scrollLeft = elements.previewTableContainer.querySelector(".preview-table-wrap")?.scrollLeft ?? 0;
   const nextValue = normalizePreviewCellValue(field, target.value, event.type);
   if (target.value !== nextValue) {
     target.value = nextValue;
@@ -1622,7 +1694,6 @@ function updatePreviewCell(event) {
     [field]: nextValue,
   };
   refreshPreviewValidation();
-  focusVisiblePreviewInput(rowIndex, field, selectionStart, selectionEnd, scrollLeft);
   setStatus(elements.importSaveStatus, "Preview changed. Save the corrected timetable after reviewing the updated rows.", "warning");
 }
 

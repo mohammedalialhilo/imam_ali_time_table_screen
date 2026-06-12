@@ -255,6 +255,8 @@ Important:
 - OCR can read numbers incorrectly. Always compare the preview with the original timetable image before saving.
 - On desktop and laptop screens, the preview appears as a wide editable table.
 - On mobile screens, the preview changes into stacked editable cards.
+- Every preview field is editable. Changes are checked immediately while you type.
+- The save button stays disabled until all required fields are valid.
 - The page saves only when every required field is valid.
 
 Preview columns:

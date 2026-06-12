@@ -140,6 +140,7 @@ Prayer-time image import support:
 - Danish timetable parsing
 - preview-row generation
 - preview validation
+- non-destructive live validation for editable preview cells
 
 ### `js/remote-data.js`
 
@@ -177,6 +178,13 @@ Responsibilities:
 - prayer import and preview editing
 - event create/edit/archive flows
 - super-admin account management
+
+Preview editing note:
+
+- the parsed timetable preview is rendered once after parsing
+- cell edits update `state.previewRows` immediately
+- live validation runs without replacing the active input element
+- full preview re-rendering is reserved for parse/reset/save flows
 
 ### `js/display.js`
 

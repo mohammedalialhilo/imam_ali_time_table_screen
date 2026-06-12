@@ -235,19 +235,25 @@ export function createEmptyImportedPrayerRow(overrides = {}) {
   };
 }
 
-function normalizeImportedRow(row = {}) {
+function normalizeImportedRow(row = {}, options = {}) {
+  const preserveRawValues = options.preserveRawValues === true;
+  const normalizeTimeValue = (value) => {
+    const stringValue = String(value ?? "").trim();
+    return preserveRawValues ? stringValue : normalizeLooseTime(stringValue);
+  };
+
   const normalized = createEmptyImportedPrayerRow({
     date: String(row.date ?? "").trim(),
     hijriDateArabic: String(row.hijriDateArabic ?? "").trim(),
     hijriDateLatin: String(row.hijriDateLatin ?? "").trim(),
-    fajr: normalizeLooseTime(row.fajr),
-    sunrise: normalizeLooseTime(row.sunrise),
-    dhuhr: normalizeLooseTime(row.dhuhr),
-    asr: normalizeLooseTime(row.asr),
-    sunset: normalizeLooseTime(row.sunset),
-    maghrib: normalizeLooseTime(row.maghrib),
-    isha: normalizeLooseTime(row.isha),
-    midnight: normalizeLooseTime(row.midnight),
+    fajr: normalizeTimeValue(row.fajr),
+    sunrise: normalizeTimeValue(row.sunrise),
+    dhuhr: normalizeTimeValue(row.dhuhr),
+    asr: normalizeTimeValue(row.asr),
+    sunset: normalizeTimeValue(row.sunset),
+    maghrib: normalizeTimeValue(row.maghrib),
+    isha: normalizeTimeValue(row.isha),
+    midnight: normalizeTimeValue(row.midnight),
     sourceLine: String(row.sourceLine ?? "").trim(),
     sourceLineNumber: Number(row.sourceLineNumber ?? 0) || 0,
     fieldErrors: typeof row.fieldErrors === "object" && row.fieldErrors !== null ? row.fieldErrors : {},
@@ -299,8 +305,8 @@ function getRowErrors(row) {
   };
 }
 
-export function validateImportedPrayerRows(rows = []) {
-  const normalizedRows = Array.isArray(rows) ? rows.map(normalizeImportedRow) : [];
+export function validateImportedPrayerRows(rows = [], options = {}) {
+  const normalizedRows = Array.isArray(rows) ? rows.map((row) => normalizeImportedRow(row, options)) : [];
   const duplicateMap = new Map();
 
   normalizedRows.forEach((row) => {
