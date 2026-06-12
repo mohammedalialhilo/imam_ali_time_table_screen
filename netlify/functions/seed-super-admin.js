@@ -32,11 +32,68 @@ function readSeedEmail() {
 }
 
 function getHeaderValue(event, name) {
-  const expectedName = String(name).toLowerCase();
-  const headers = event?.headers ?? {};
+  const expectedName = String(name ?? "").trim();
+  if (!expectedName) {
+    return "";
+  }
 
-  const matchingKey = Object.keys(headers).find((key) => key.toLowerCase() === expectedName);
-  return matchingKey ? String(headers[matchingKey] ?? "").trim() : "";
+  const normalizedExpectedName = expectedName.toLowerCase();
+  const headerMaps = [event?.headers ?? {}, event?.multiValueHeaders ?? {}];
+
+  for (const headers of headerMaps) {
+    if (!headers || typeof headers !== "object") {
+      continue;
+    }
+
+    const directCandidates = [
+      expectedName,
+      expectedName.toLowerCase(),
+      expectedName.toUpperCase(),
+    ];
+
+    for (const candidate of directCandidates) {
+      if (Object.prototype.hasOwnProperty.call(headers, candidate)) {
+        const value = headers[candidate];
+        if (Array.isArray(value)) {
+          const firstNonEmpty = value.find((item) => String(item ?? "").trim());
+          return String(firstNonEmpty ?? "").trim();
+        }
+
+        return String(value ?? "").trim();
+      }
+    }
+
+    const matchingKey = Object.keys(headers).find(
+      (key) => String(key).toLowerCase() === normalizedExpectedName,
+    );
+
+    if (matchingKey) {
+      const value = headers[matchingKey];
+      if (Array.isArray(value)) {
+        const firstNonEmpty = value.find((item) => String(item ?? "").trim());
+        return String(firstNonEmpty ?? "").trim();
+      }
+
+      return String(value ?? "").trim();
+    }
+  }
+
+  return "";
+}
+
+function getProvidedSeedToken(event) {
+  return String(
+    getHeaderValue(event, "x-seed-token")
+      || getHeaderValue(event, "X-Seed-Token")
+      || getHeaderValue(event, "X-SEED-TOKEN")
+      || event?.headers?.["x-seed-token"]
+      || event?.headers?.["X-Seed-Token"]
+      || event?.headers?.["X-SEED-TOKEN"]
+      || event?.multiValueHeaders?.["x-seed-token"]?.[0]
+      || event?.multiValueHeaders?.["X-Seed-Token"]?.[0]
+      || event?.multiValueHeaders?.["X-SEED-TOKEN"]?.[0]
+      || "",
+  ).trim();
 }
 
 function tokensMatch(left, right) {
@@ -74,16 +131,34 @@ exports.handler = async function handler(event) {
     return jsonResponse(405, { error: "Method not allowed. Use POST." });
   }
 
+  const cleanProvidedToken = String(getProvidedSeedToken(event) || "").trim();
   let expectedSeedToken;
   try {
     expectedSeedToken = readRequiredEnv("SEED_SETUP_TOKEN");
   } catch (_error) {
-    return jsonResponse(503, { error: "Seed setup token is not configured." });
+    console.info("[seed-super-admin] token validation", {
+      hasSeedSetupToken: false,
+      hasProvidedSeedToken: Boolean(cleanProvidedToken),
+    });
+
+    return jsonResponse(500, {
+      error: "Server configuration error",
+      message: "SEED_SETUP_TOKEN is not configured.",
+    });
   }
 
-  const providedSeedToken = getHeaderValue(event, "x-seed-token");
-  if (!providedSeedToken || !tokensMatch(providedSeedToken, expectedSeedToken)) {
-    return jsonResponse(403, { error: "Forbidden." });
+  const cleanExpectedToken = String(expectedSeedToken || "").trim();
+
+  console.info("[seed-super-admin] token validation", {
+    hasSeedSetupToken: Boolean(cleanExpectedToken),
+    hasProvidedSeedToken: Boolean(cleanProvidedToken),
+  });
+
+  if (!cleanProvidedToken || !tokensMatch(cleanProvidedToken, cleanExpectedToken)) {
+    return jsonResponse(403, {
+      error: "Forbidden",
+      message: "Missing or invalid seed token.",
+    });
   }
 
   let supabase;
