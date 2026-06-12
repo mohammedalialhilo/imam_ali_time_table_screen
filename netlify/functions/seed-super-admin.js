@@ -7,28 +7,37 @@ const { createSupabaseAdminClient } = require("./_supabase");
 const REQUIRED_SEED_EMAIL = "noorlocatoor@gmail.com";
 const SUPER_ADMIN_ROLE = "super_admin";
 
-function readRequiredEnv(name) {
-  const value = String(process.env[name] ?? "").trim();
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
+function readEnvValue(name) {
+  return String(process.env[name] ?? "").trim();
 }
 
 function readSeedEmail() {
-  const configuredEmail = normalizeEmail(
-    process.env.SEED_SUPER_ADMIN_EMAIL ?? REQUIRED_SEED_EMAIL,
-  );
+  const configuredEmail = normalizeEmail(readEnvValue("SEED_SUPER_ADMIN_EMAIL") || REQUIRED_SEED_EMAIL);
 
   if (!configuredEmail) {
-    throw new Error("Missing required environment variable: SEED_SUPER_ADMIN_EMAIL");
+    return {
+      ok: false,
+      response: jsonResponse(500, {
+        error: "Missing environment variable",
+        missing: "SEED_SUPER_ADMIN_EMAIL",
+      }),
+    };
   }
 
   if (configuredEmail !== REQUIRED_SEED_EMAIL) {
-    throw new Error(`SEED_SUPER_ADMIN_EMAIL must be ${REQUIRED_SEED_EMAIL}.`);
+    return {
+      ok: false,
+      response: jsonResponse(500, {
+        error: "Server configuration error",
+        message: `SEED_SUPER_ADMIN_EMAIL must be ${REQUIRED_SEED_EMAIL}.`,
+      }),
+    };
   }
 
-  return configuredEmail;
+  return {
+    ok: true,
+    email: configuredEmail,
+  };
 }
 
 function getHeaderValue(event, name) {
@@ -107,6 +116,18 @@ function tokensMatch(left, right) {
   return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
+function missingEnvResponse(name) {
+  return jsonResponse(500, {
+    error: "Missing environment variable",
+    missing: name,
+  });
+}
+
+function getRequiredEnv(name) {
+  const value = readEnvValue(name);
+  return value ? { ok: true, value } : { ok: false, response: missingEnvResponse(name) };
+}
+
 async function ensureAdminProfile(supabase, userId, email) {
   const { error } = await supabase
     .from("admin_profiles")
@@ -121,9 +142,10 @@ async function ensureAdminProfile(supabase, userId, email) {
       { onConflict: "id" },
     );
 
-  if (error) {
-    throw new Error(`Unable to save admin profile: ${error.message}`);
-  }
+  return {
+    ok: !error,
+    error,
+  };
 }
 
 exports.handler = async function handler(event) {
@@ -131,23 +153,19 @@ exports.handler = async function handler(event) {
     return jsonResponse(405, { error: "Method not allowed. Use POST." });
   }
 
+  console.info("Seed function started");
+
   const cleanProvidedToken = String(getProvidedSeedToken(event) || "").trim();
-  let expectedSeedToken;
-  try {
-    expectedSeedToken = readRequiredEnv("SEED_SETUP_TOKEN");
-  } catch (_error) {
+  const expectedSeedTokenResult = getRequiredEnv("SEED_SETUP_TOKEN");
+  if (!expectedSeedTokenResult.ok) {
     console.info("[seed-super-admin] token validation", {
       hasSeedSetupToken: false,
       hasProvidedSeedToken: Boolean(cleanProvidedToken),
     });
-
-    return jsonResponse(500, {
-      error: "Server configuration error",
-      message: "SEED_SETUP_TOKEN is not configured.",
-    });
+    return expectedSeedTokenResult.response;
   }
 
-  const cleanExpectedToken = String(expectedSeedToken || "").trim();
+  const cleanExpectedToken = String(expectedSeedTokenResult.value || "").trim();
 
   console.info("[seed-super-admin] token validation", {
     hasSeedSetupToken: Boolean(cleanExpectedToken),
@@ -161,23 +179,54 @@ exports.handler = async function handler(event) {
     });
   }
 
+  console.info("Seed token accepted");
+
+  const requiredEnvNames = [
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SEED_SUPER_ADMIN_EMAIL",
+    "SEED_SUPER_ADMIN_PASSWORD",
+  ];
+
+  for (const envName of requiredEnvNames) {
+    const result = getRequiredEnv(envName);
+    if (!result.ok) {
+      return result.response;
+    }
+  }
+
+  const seedEmailResult = readSeedEmail();
+  if (!seedEmailResult.ok) {
+    return seedEmailResult.response;
+  }
+
   let supabase;
-  let seedEmail;
-  let seedPassword;
   try {
     supabase = createSupabaseAdminClient();
-    seedEmail = readSeedEmail();
-    seedPassword = readRequiredEnv("SEED_SUPER_ADMIN_PASSWORD");
   } catch (error) {
-    return jsonResponse(503, {
-      error: "Seed function is not fully configured.",
-      details: error.message,
+    return jsonResponse(500, {
+      error: "Server configuration error",
+      message: error.message,
     });
   }
 
+  console.info("Supabase client created");
+
+  const seedEmail = seedEmailResult.email;
+  const seedPassword = readEnvValue("SEED_SUPER_ADMIN_PASSWORD");
+
   try {
-    let user = await findAuthUserByEmail(supabase, seedEmail);
-    let createdNewUser = false;
+    console.info("Creating or finding super admin user");
+
+    let user;
+    try {
+      user = await findAuthUserByEmail(supabase, seedEmail);
+    } catch (error) {
+      return jsonResponse(500, {
+        error: "Supabase auth error",
+        message: error.message,
+      });
+    }
 
     if (!user) {
       const { data, error } = await supabase.auth.admin.createUser({
@@ -190,37 +239,51 @@ exports.handler = async function handler(event) {
         const conflictDetected = /already|registered|exists|duplicate/i.test(error.message);
         if (!conflictDetected) {
           return jsonResponse(500, {
-            error: "Unable to create the super admin user.",
-            details: error.message,
+            error: "Supabase auth error",
+            message: error.message,
           });
         }
 
-        user = await findAuthUserByEmail(supabase, seedEmail);
+        try {
+          user = await findAuthUserByEmail(supabase, seedEmail);
+        } catch (lookupError) {
+          return jsonResponse(500, {
+            error: "Supabase auth error",
+            message: lookupError.message,
+          });
+        }
       } else {
         user = data?.user ?? null;
-        createdNewUser = true;
       }
     }
 
     if (!user?.id) {
       return jsonResponse(500, {
-        error: "Unable to locate the super admin user after seeding.",
+        error: "Supabase auth error",
+        message: "Unable to locate the super admin user after seeding.",
       });
     }
 
-    await ensureAdminProfile(supabase, user.id, seedEmail);
+    console.info("Creating or updating admin profile");
+
+    const profileResult = await ensureAdminProfile(supabase, user.id, seedEmail);
+    if (!profileResult.ok) {
+      return jsonResponse(500, {
+        error: "Admin profile error",
+        message: profileResult.error.message,
+      });
+    }
+
+    console.info("Seed completed");
 
     return jsonResponse(200, {
       success: true,
-      message: createdNewUser
-        ? "Super admin seeded successfully"
-        : "Super admin already exists and is active",
-      email: seedEmail,
+      message: "Super admin seeded successfully.",
     });
   } catch (error) {
     return jsonResponse(500, {
-      error: "Unexpected error while seeding the super admin user.",
-      details: error.message,
+      error: "Server configuration error",
+      message: error.message,
     });
   }
 };
